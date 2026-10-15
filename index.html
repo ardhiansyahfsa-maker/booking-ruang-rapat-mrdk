@@ -1,0 +1,399 @@
+<title>Reservasi Ruang Rapat RDK</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — status per ruang, papan jadwal harian (timeline), lalu formulir pesan + daftar pesanan berdampingan */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --line:#d9dfe5; --fg:#17212b; --muted:#5b6876;
+  --accent:#0f5e78; --accent-ink:#ffffff; --accent-soft:#dcecf1;
+  --ok:#1d7a4a; --ok-soft:#dff1e7; --busy:#b0442c; --busy-soft:#f8e3dd; --mine:#7a5a12; --mine-soft:#f6ecd2;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11171c; --surface:#182129; --line:#2a3640; --fg:#e4eaef; --muted:#93a1ae;
+  --accent:#5fb4cf; --accent-ink:#0b1a20; --accent-soft:#18323c;
+  --ok:#6fd09a; --ok-soft:#163327; --busy:#f08d74; --busy-soft:#3a1f19; --mine:#e4c06c; --mine-soft:#33290f;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11171c; --surface:#182129; --line:#2a3640; --fg:#e4eaef; --muted:#93a1ae;
+  --accent:#5fb4cf; --accent-ink:#0b1a20; --accent-soft:#18323c;
+  --ok:#6fd09a; --ok-soft:#163327; --busy:#f08d74; --busy-soft:#3a1f19; --mine:#e4c06c; --mine-soft:#33290f;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+h1{font-size:1.55rem;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:1rem;font-weight:600;margin:0}
+.eyebrow{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.head{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.notice{border:1px solid var(--line);background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:.9rem}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 12px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:10px 16px}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.danger{color:var(--busy);border-color:var(--busy)}
+/* date bar */
+.datebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.datebar input{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:6px 10px}
+.daylabel{font-weight:600;margin-left:4px}
+/* status cards */
+.rooms{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.room{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.room .name{font-weight:600}
+.room .sub{font-size:.85rem;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;padding:3px 10px;border-radius:999px;width:fit-content}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.busy{background:var(--busy-soft);color:var(--busy)}
+/* timeline */
+.tl-scroll{overflow-x:auto;margin:0 -18px;padding:0 18px}
+.tl{min-width:860px;display:grid;grid-template-columns:150px 1fr;row-gap:8px}
+.tl-hours{position:relative;height:20px;font-size:.72rem;color:var(--muted)}
+.tl-hours span{position:absolute;transform:translateX(-50%);font-family:var(--f-mono)}
+.tl-label{font-size:.85rem;font-weight:600;padding-right:10px;display:flex;align-items:center;line-height:1.25}
+.track{position:relative;height:58px;border:1px solid var(--line);border-radius:7px;cursor:copy;
+  background-image:repeating-linear-gradient(to right,var(--line) 0 1px,transparent 1px calc(100%/13));background-color:var(--bg)}
+.track .past{position:absolute;top:0;bottom:0;left:0;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--muted) 14%,transparent) 6px 7px);pointer-events:none;border-radius:6px 0 0 6px}
+.track .now{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--busy);pointer-events:none}
+.blk{position:absolute;top:4px;bottom:4px;border-radius:5px;background:var(--accent-soft);border-left:3px solid var(--accent);padding:3px 6px;overflow:hidden;font-size:.74rem;line-height:1.25;cursor:default}
+.blk.mine{background:var(--mine-soft);border-left-color:var(--mine)}
+.blk b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.blk span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-family:var(--f-mono)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.8rem;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+/* lower */
+.lower{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px;align-items:start}
+@media (max-width:860px){.lower{grid-template-columns:1fr}}
+form{display:flex;flex-direction:column;gap:12px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:.8rem;font-weight:600;color:var(--muted)}
+.field input,.field select{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:8px 10px;width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.check{border-radius:8px;padding:10px 12px;font-size:.9rem;border:1px solid var(--line)}
+.check.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.check.busy{background:var(--busy-soft);color:var(--busy);border-color:transparent}
+.check .alt{display:block;color:var(--fg);margin-top:4px;font-size:.85rem}
+.check .alt button{border:0;background:none;color:var(--accent);text-decoration:underline;padding:0;font-weight:600}
+.msg{font-size:.9rem;min-height:1.2em}
+.msg.err{color:var(--busy)} .msg.ok{color:var(--ok)}
+.tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+.tabs button{border:0;background:none;padding:8px 12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item .t{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.85rem;font-weight:500}
+.item .t small{display:block;color:var(--muted);font-family:var(--f-body);font-size:.75rem}
+.item .what{font-weight:600;overflow-wrap:anywhere}
+.item .who{font-size:.85rem;color:var(--muted);overflow-wrap:anywhere}
+.item .who.unit{color:var(--fg)}
+#f-unit-other{margin-top:6px}
+.tag{font-size:.7rem;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--mine-soft);color:var(--mine);margin-left:6px;vertical-align:1px}
+.empty{color:var(--muted);font-size:.9rem;padding:14px 0}
+@media (max-width:520px){.item{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <div>
+      <div class="eyebrow">Reservasi ruang rapat</div>
+      <h1>Ruang Rapat RDK</h1>
+    </div>
+    <div class="datebar">
+      <button class="btn" id="prev" aria-label="Hari sebelumnya">‹</button>
+      <button class="btn" id="today">Hari ini</button>
+      <button class="btn" id="next" aria-label="Hari berikutnya">›</button>
+      <input type="date" id="datepick" aria-label="Pilih tanggal">
+      <span class="daylabel" id="daylabel"></span>
+    </div>
+  </div>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <section class="rooms" id="rooms" aria-label="Status ruang"></section>
+
+  <section class="panel">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-bottom:14px">
+      <h2>Jadwal <span id="tl-date"></span></h2>
+      <span style="font-size:.85rem;color:var(--muted)">Klik slot kosong untuk mulai memesan</span>
+    </div>
+    <div class="tl-scroll"><div class="tl" id="timeline"></div></div>
+    <div class="legend">
+      <span><i style="background:var(--accent-soft);border-left:3px solid var(--accent)"></i>Terpesan</span>
+      <span><i style="background:var(--mine-soft);border-left:3px solid var(--mine)"></i>Pesanan Anda</span>
+      <span><i style="background:var(--busy)"></i>Waktu sekarang</span>
+    </div>
+  </section>
+
+  <div class="lower">
+    <section class="panel" aria-labelledby="f-title">
+      <h2 id="f-title" style="margin-bottom:14px">Pesan ruang</h2>
+      <form id="form" novalidate>
+        <div class="field"><label for="f-room">Ruang</label><select id="f-room"></select></div>
+        <div class="field"><label for="f-date">Tanggal</label><input type="date" id="f-date"></div>
+        <div class="row2">
+          <div class="field"><label for="f-start">Mulai</label><select id="f-start" class="mono"></select></div>
+          <div class="field"><label for="f-end">Selesai</label><select id="f-end" class="mono"></select></div>
+        </div>
+        <div class="check" id="check" aria-live="polite"></div>
+        <div class="field"><label for="f-title-in">Agenda rapat</label><input id="f-title-in" maxlength="120" placeholder="mis. Rapat koordinasi pengendalian kualitas"></div>
+        <div class="field"><label for="f-unit">Pengguna ruang (satuan kerja)</label>
+          <select id="f-unit"><option value="">Pilih satuan kerja…</option></select>
+          <input id="f-unit-other" maxlength="80" placeholder="Tulis nama unit / pihak pengguna" hidden>
+        </div>
+        <div class="field"><label for="f-name">Nama pemesan</label><input id="f-name" maxlength="80" autocomplete="name"></div>
+        <div class="field"><label for="f-pax">Jumlah peserta (opsional)</label><input id="f-pax" type="number" min="1" max="200" inputmode="numeric"></div>
+        <button class="btn primary" id="submit" type="submit">Pesan ruang ini</button>
+        <div class="msg" id="msg" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-day" aria-selected="true">Pesanan tanggal ini</button>
+        <button role="tab" id="tab-mine" aria-selected="false">Pesanan saya</button>
+      </div>
+      <div class="list" id="list"><div class="empty">Memuat jadwal…</div></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const ROOMS=[
+  {id:"ex2wm",name:"RR Executive 2 WM",short:"Executive 2 WM"},
+  {id:"ex3wm",name:"RR Executive 3 WM",short:"Executive 3 WM"},
+  {id:"rdk3s",name:"RR RDK Lantai 3 Soemitro",short:"RDK Lt. 3 Soemitro"},
+];
+const SATKER=[
+ ["DK1","Kebijakan Strategis",[["DKSK","Deputi Komisioner Stabilitas Sistem Keuangan"],["DSKT","Departemen Surveillance dan Kebijakan Sektor Jasa Keuangan Terintegrasi"],["DPZT","Departemen Koordinasi Pengawasan dan Perizinan Terintegrasi"],["DPDS","Departemen Pengelolaan Data dan Statistik"],["DINP","Departemen Internasional dan APU-PPT"],["DKSM","Deputi Komisioner Sumber Daya Manusia"],["DOSB","Departemen Organisasi, SDM, dan Budaya"],["OJKI","OJK Institute"],["DKAI","Deputi Komisioner Audit Internal, Manajemen Risiko, dan Pengendalian Kualitas"],["DPAI","Departemen Audit Internal"],["DRPK","Departemen Manajemen Risiko dan Pengendalian Kualitas"],["DPIK","Departemen Penegakan Integritas dan Audit Khusus"]]],
+ ["DK2","Manajemen Strategis",[["DKSH","Deputi Komisioner Sistem Informasi dan Daerah"],["DMND","Departemen Manajemen dan Pengembangan OJK Daerah"],["DPSI","Departemen Pengelolaan Sistem Informasi"],["DPEA","Departemen Pengembangan Aplikasi"],["UKTF","Unit Khusus Transformasi"],["DKKL","Deputi Komisioner Perencanaan Strategis, Keuangan, Sekretariat Dewan Komisioner dan Logistik"],["DPSU","Departemen Perencanaan Strategis dan Keuangan"],["DSHK","Departemen Sekretariat Dewan Komisioner dan Hubungan Kelembagaan"],["DLOG","Departemen Logistik"],["DKHP","Deputi Komisioner Hukum dan Penyidikan"],["DHUK","Departemen Hukum"],["DPJK","Departemen Penyidikan Sektor Jasa Keuangan"]]],
+ ["DK3","Perbankan",[["DKPS","Deputi Komisioner Pengaturan, Perizinan dan Pengendalian Kualitas"],["DPNP","Departemen Pengaturan dan Pengembangan Perbankan"],["DPKP","Departemen Pengendalian Kualitas dan Pengembangan Pengawasan Perbankan"],["DIMB","Departemen Perizinan dan Manajemen Krisis Perbankan"],["DPMS","Departemen Pengaturan dan Pengembangan UMKM dan Keuangan Syariah"],["DKSD","Deputi Komisioner Pengawas Bank Pemerintah, Syariah dan Perbankan Daerah"],["DPBP","Departemen Pengawasan Bank Pemerintah"],["DPBS","Departemen Pengawasan Bank Syariah"],["DRPD","Departemen Pemeriksaan Khusus dan Pengawasan Perbankan Daerah"],["DKKB","Deputi Komisioner Pengawas Konglomerasi Keuangan dan Bank Swasta"],["DPKO","Departemen Pengawasan Konglomerasi Keuangan"],["DPW1","Departemen Pengawasan Bank Swasta 1"],["DPW2","Departemen Pengawasan Bank Swasta 2"]]],
+ ["DK4","Pasar Modal",[["DPPM","Departemen Pengaturan dan Pengembangan Pasar Modal, Keuangan Derivatif dan Bursa Karbon"],["DPZP","Departemen Perizinan Kelembagaan dan Profesi Pelaku"],["DPVR","Departemen Pengawasan Pengelolaan Investasi dan Pasar Modal Regional"],["DPLE","Departemen Pengawasan Lembaga Efek"],["DKPE","Deputi Komisioner Perizinan dan Pengawas Pengelolaan Investasi Pasar Modal dan Lembaga Efek"],["DKTK","Deputi Komisioner Pengawas Emiten, Transaksi Efek, Pemeriksaan Khusus, Keuangan Derivatif dan Bursa Karbon"],["DNEK","Departemen Penilaian Emiten, Perusahaan Publik, dan Perizinan Keuangan Derivatif dan Bursa Karbon"],["DPEP","Departemen Pengawasan Emiten dan Perusahaan Publik"],["DPTP","Departemen Pengawasan Keuangan Derivatif, Bursa Karbon, Transaksi Efek dan Pemeriksaan Khusus"]]],
+ ["DK5","PPDP",[["DPPP","Departemen Pengaturan dan Pengembangan Perasuransian, Penjaminan dan Dana Pensiun"],["DIPD","Departemen Perizinan, Pemeriksaan Khusus dan Pengendalian Kualitas Pengawasan Perasuransian, Penjaminan dan Dana Pensiun"],["DAKR","Departemen Aktuaria"],["DKPD","Deputi Komisioner Pengawas Perasuransian, Penjaminan dan Dana Pensiun"],["DAJP","Departemen Pengawasan Asuransi dan Jasa Penunjang"],["DPDK","Departemen Pengawasan Penjaminan, Dana Pensiun dan Pengawasan Khusus"]]],
+ ["DK6","PVML",[["DPPL","Departemen Pengaturan dan Pengembangan Lembaga Pembiayaan, Perusahaan Modal Ventura, Lembaga Keuangan Mikro dan Lembaga Jasa Keuangan Lainnya"],["DZPL","Departemen Perizinan, Pemeriksaan Khusus dan Pengendalian Kualitas Pengawasan Lembaga Pembiayaan, Perusahaan Modal Ventura, Lembaga Keuangan Mikro dan Lembaga Jasa Keuangan Lainnya"],["DKPL","Deputi Komisioner Pengawas Lembaga Pembiayaan, Perusahaan Modal Ventura, Lembaga Keuangan Mikro dan Lembaga Jasa Keuangan Lainnya"],["DPVL","Departemen Pengawasan Lembaga Pembiayaan, Perusahaan Modal Ventura dan Lembaga Keuangan Khusus"],["DPLJ","Departemen Pengawasan Lembaga Keuangan Mikro dan Lembaga Jasa Keuangan Lainnya"]]],
+ ["DK7","IAKD",[["DPIA","Departemen Pengaturan dan Perizinan Inovasi Teknologi Sektor Keuangan, Aset Keuangan Digital dan Aset Kripto"],["DKID","Deputi Komisioner Pengawas ITSK, Aset Keuangan Digital dan Aset Kripto"],["DPIR","Departemen Pengawasan Inovasi Teknologi Sektor Keuangan, Aset Keuangan Digital dan Aset Kripto"]]],
+ ["DK8","PEPK",[["Plt. DKPP","Deputi Komisioner Pengawas Perilaku Pelaku Usaha Jasa Keuangan dan Pelindungan Konsumen"],["DPLK","Departemen Pelindungan Konsumen"],["DPUK","Departemen Pengawasan Perilaku Pelaku Usaha Jasa Keuangan"],["DLIK","Departemen Literasi, Inklusi Keuangan, dan Komunikasi"]]],
+ ["DK9","BMKS",[["DKBK","Deputi Komisioner Bursa Mineral dan Komoditas Strategis"],["DPBK","Departemen Pengawasan Lembaga dan Transaksi Bursa Mineral dan Komoditas Strategis"],["DPPK","Departemen Pengaturan dan Perizinan Bursa Mineral dan Komoditas Strategis"]]],
+];
+const SATKER_MAP={};
+for(const[dk,bidang,units]of SATKER){SATKER_MAP[dk]={name:bidang,dk};for(const[a,n]of units)SATKER_MAP[a]={name:n,dk}}
+const unitLabel=b=>b.unit?(SATKER_MAP[b.unit]?b.unit+" · "+SATKER_MAP[b.unit].name:b.unit):"";
+const DAY_START=7*60, DAY_END=20*60, STEP=30;
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,"0");
+const toMin=s=>{const[h,m]=s.split(":").map(Number);return h*60+m};
+const toHM=m=>pad(Math.floor(m/60))+":"+pad(m%60);
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parseYmd=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const fmtDay=s=>parseYmd(s).toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+const fmtShort=s=>parseYmd(s).toLocaleDateString("id-ID",{weekday:"short",day:"numeric",month:"short"});
+const roomName=id=>(ROOMS.find(r=>r.id===id)||{}).name||id;
+function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==="class")e.className=v;else if(k==="style")e.style.cssText=v;else if(k.startsWith("on"))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v)}for(const c of kids){if(c==null)continue;e.append(c.nodeType?c:document.createTextNode(String(c)))}return e}
+
+let state={date:ymd(new Date()),bookings:[],loaded:false,myId:null,canAdmin:false,canWrite:true,tab:"day",confirmId:null,busy:false};
+let db=null;
+
+/* ---------- static controls ---------- */
+for(const r of ROOMS)$("f-room").append(el("option",{value:r.id},r.name));
+for(const[dk,bidang,units]of SATKER){
+  const g=el("optgroup",{label:dk+" · "+bidang});
+  g.append(el("option",{value:dk},dk+" — "+bidang));
+  for(const[a,n]of units)g.append(el("option",{value:a},a+" — "+n));
+  $("f-unit").append(g);
+}
+$("f-unit").append(el("optgroup",{label:"Lainnya"},el("option",{value:"__other"},"Lainnya (tulis sendiri)")));
+$("f-unit").addEventListener("change",()=>{const o=$("f-unit").value==="__other";$("f-unit-other").hidden=!o;if(o)$("f-unit-other").focus()});
+for(let m=DAY_START;m<DAY_END;m+=STEP)$("f-start").append(el("option",{value:toHM(m)},toHM(m)));
+function fillEnd(){const s=toMin($("f-start").value),cur=$("f-end").value;$("f-end").replaceChildren();
+  for(let m=s+STEP;m<=DAY_END;m+=STEP)$("f-end").append(el("option",{value:toHM(m)},toHM(m)));
+  if(cur&&toMin(cur)>s)$("f-end").value=cur;else $("f-end").value=toHM(Math.min(s+60,DAY_END));}
+function nextSlot(){const n=new Date();let m=Math.ceil((n.getHours()*60+n.getMinutes())/STEP)*STEP;return Math.max(DAY_START,Math.min(m,DAY_END-STEP))}
+$("f-date").value=state.date;$("f-start").value=toHM(nextSlot());fillEnd();
+try{const saved=JSON.parse(localStorage.getItem("rr-pemesan")||"{}");if(saved.name)$("f-name").value=saved.name;if(saved.unit){if(SATKER_MAP[saved.unit])$("f-unit").value=saved.unit;else{$("f-unit").value="__other";$("f-unit-other").value=saved.unit;$("f-unit-other").hidden=false}}}catch(e){}
+
+/* ---------- logic ---------- */
+const overlaps=(a,b)=>toMin(a.start)<toMin(b.end)&&toMin(b.start)<toMin(a.end);
+const dayBookings=(date,room)=>state.bookings.filter(b=>b.date===date&&(!room||b.room===room)).sort((a,b)=>toMin(a.start)-toMin(b.start));
+function conflicts(req){return dayBookings(req.date,req.room).filter(b=>overlaps(b,req))}
+function isPast(date,start){const now=new Date(),t=ymd(now);if(date<t)return true;if(date>t)return false;return toMin(start)<now.getHours()*60+now.getMinutes()-5}
+function formReq(){return{room:$("f-room").value,date:$("f-date").value,start:$("f-start").value,end:$("f-end").value}}
+
+/* ---------- render ---------- */
+function setDate(d){state.date=d;$("datepick").value=d;render()}
+function render(){
+  $("daylabel").textContent=fmtDay(state.date);
+  $("tl-date").textContent="· "+fmtShort(state.date);
+  renderRooms();renderTimeline();renderCheck();renderList();
+}
+function renderRooms(){
+  const box=$("rooms");box.replaceChildren();
+  const now=new Date(),isToday=state.date===ymd(now),nm=now.getHours()*60+now.getMinutes();
+  for(const r of ROOMS){
+    const list=dayBookings(state.date,r.id);let pill,sub;
+    if(isToday){
+      const cur=list.find(b=>toMin(b.start)<=nm&&nm<toMin(b.end));
+      const nxt=list.find(b=>toMin(b.start)>nm);
+      if(cur){pill=el("span",{class:"pill busy"},"Dipakai s.d. "+cur.end);sub=cur.title}
+      else{pill=el("span",{class:"pill ok"},"Tersedia sekarang");sub=nxt?"Berikutnya "+nxt.start+" · "+nxt.title:"Kosong sampai akhir hari"}
+    }else{
+      const used=list.reduce((s,b)=>s+toMin(b.end)-toMin(b.start),0);
+      pill=list.length?el("span",{class:"pill busy"},list.length+" pesanan"):el("span",{class:"pill ok"},"Belum ada pesanan");
+      sub=list.length?"Terpakai "+(used/60).toLocaleString("id-ID",{maximumFractionDigits:1})+" jam dari 13 jam":"Bebas 07:00–20:00";
+    }
+    box.append(el("div",{class:"room"},el("div",{class:"name"},r.name),pill,el("div",{class:"sub"},sub)));
+  }
+}
+function renderTimeline(){
+  const tl=$("timeline");tl.replaceChildren();
+  const span=DAY_END-DAY_START,pct=m=>((m-DAY_START)/span*100)+"%";
+  const hours=el("div",{class:"tl-hours"});
+  for(let m=DAY_START;m<=DAY_END;m+=60)hours.append(el("span",{style:"left:"+pct(m)},toHM(m)));
+  tl.append(el("div"),hours);
+  const now=new Date(),t=ymd(now),nm=now.getHours()*60+now.getMinutes();
+  for(const r of ROOMS){
+    const track=el("div",{class:"track",role:"button",tabindex:"0","aria-label":"Pesan "+r.name});
+    if(state.date<t)track.append(el("div",{class:"past",style:"width:100%"}));
+    else if(state.date===t&&nm>DAY_START)track.append(el("div",{class:"past",style:"width:"+pct(Math.min(nm,DAY_END))}));
+    if(state.date===t&&nm>=DAY_START&&nm<=DAY_END)track.append(el("div",{class:"now",style:"left:"+pct(nm)}));
+    for(const b of dayBookings(state.date,r.id)){
+      const s=Math.max(toMin(b.start),DAY_START),e=Math.min(toMin(b.end),DAY_END);
+      const mine=state.myId&&b.by===state.myId;
+      const blk=el("div",{class:"blk"+(mine?" mine":""),style:"left:calc("+pct(s)+" + 1px);width:calc("+((e-s)/span*100)+"% - 3px)",title:b.start+"–"+b.end+" · "+b.title+"\n"+(b.unit?unitLabel(b)+"\n":"")+"Pemesan: "+b.name},
+        el("b",{},b.title),el("span",{},b.start+"–"+b.end+" · "+(b.unit||b.name)));
+      blk.addEventListener("click",ev=>ev.stopPropagation());
+      track.append(blk);
+    }
+    track.addEventListener("click",ev=>{
+      const rect=track.getBoundingClientRect();
+      let m=DAY_START+Math.floor(((ev.clientX-rect.left)/rect.width*span)/STEP)*STEP;
+      pick(r.id,Math.max(DAY_START,Math.min(m,DAY_END-STEP)));
+    });
+    track.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();pick(r.id,toMin($("f-start").value))}});
+    tl.append(el("div",{class:"tl-label"},r.name),track);
+  }
+}
+function pick(room,startMin){
+  $("f-room").value=room;$("f-date").value=state.date;$("f-start").value=toHM(startMin);fillEnd();
+  $("msg").textContent="";renderCheck();
+  $("f-title").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+  $("f-title-in").focus({preventScroll:true});
+}
+function renderCheck(){
+  const box=$("check"),req=formReq();box.replaceChildren();box.className="check";
+  if(!req.date){box.textContent="Pilih tanggal.";updateSubmit(false);return}
+  if(!state.loaded){box.textContent="Memeriksa ketersediaan…";updateSubmit(false);return}
+  if(isPast(req.date,req.start)){box.classList.add("busy");box.textContent="Waktu ini sudah lewat. Pilih jam yang akan datang.";updateSubmit(false);return}
+  const c=conflicts(req);
+  if(!c.length){box.classList.add("ok");box.textContent="✓ "+roomName(req.room)+" tersedia "+req.start+"–"+req.end+", "+fmtShort(req.date)+".";updateSubmit(true);return}
+  box.classList.add("busy");
+  box.append("✕ Bentrok dengan "+c.map(b=>b.start+"–"+b.end+" "+b.title+" ("+(b.unit||b.name)+")").join("; ")+".");
+  const free=ROOMS.filter(r=>r.id!==req.room&&!conflicts({...req,room:r.id}).length);
+  const alt=el("span",{class:"alt"});
+  if(free.length){alt.append("Ruang lain yang kosong di jam ini: ");free.forEach((r,i)=>{if(i)alt.append(", ");alt.append(el("button",{type:"button",onclick:()=>{$("f-room").value=r.id;renderCheck()}},r.short))})}
+  else alt.append("Ketiga ruang terpakai di jam ini.");
+  box.append(alt);updateSubmit(false);
+}
+function updateSubmit(ok){$("submit").disabled=!ok||!state.canWrite||!db||state.busy}
+function renderList(){
+  const list=$("list");list.replaceChildren();
+  $("tab-day").setAttribute("aria-selected",state.tab==="day");$("tab-mine").setAttribute("aria-selected",state.tab==="mine");
+  if(!state.loaded){list.append(el("div",{class:"empty"},db?"Memuat jadwal…":"Jadwal belum bisa dimuat."));return}
+  let rows;const t=ymd(new Date());
+  if(state.tab==="day")rows=dayBookings(state.date).sort((a,b)=>toMin(a.start)-toMin(b.start)||a.room.localeCompare(b.room));
+  else rows=state.bookings.filter(b=>state.myId&&b.by===state.myId&&b.date>=t).sort((a,b)=>a.date.localeCompare(b.date)||toMin(a.start)-toMin(b.start));
+  if(!rows.length){list.append(el("div",{class:"empty"},state.tab==="day"?"Belum ada pesanan pada "+fmtDay(state.date)+". Ketiga ruang tersedia sepanjang hari.":"Anda belum punya pesanan mendatang."));return}
+  for(const b of rows){
+    const mine=state.myId&&b.by===state.myId;
+    const canCancel=(mine||state.canAdmin)&&b.date>=t&&db&&state.canWrite;
+    let action="";
+    if(canCancel){
+      const confirming=state.confirmId===b.id;
+      action=el("button",{class:"btn danger",type:"button",onclick:()=>confirming?cancel(b):(state.confirmId=b.id,renderList())},confirming?"Ya, batalkan":"Batalkan");
+    }
+    list.append(el("div",{class:"item"},
+      el("div",{class:"t"},b.start+"–"+b.end,el("small",{},state.tab==="mine"?fmtShort(b.date):"")),
+      el("div",{},el("div",{class:"what"},b.title,mine?el("span",{class:"tag"},"Anda"):null),
+        b.unit?el("div",{class:"who unit"},unitLabel(b)):null,
+        el("div",{class:"who"},roomName(b.room)+" · Pemesan: "+b.name+(b.pax?" · "+b.pax+" orang":""))),
+      action));
+  }
+}
+
+/* ---------- actions ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function book(ev){
+  ev.preventDefault();
+  const msg=$("msg");msg.className="msg";
+  const req=formReq();
+  const title=$("f-title-in").value.trim(),name=$("f-name").value.trim(),pax=parseInt($("f-pax").value,10);
+  const unit=$("f-unit").value==="__other"?$("f-unit-other").value.trim():$("f-unit").value;
+  if(!title){msg.className="msg err";msg.textContent="Isi agenda rapat dulu.";$("f-title-in").focus();return}
+  if(!unit){msg.className="msg err";msg.textContent="Pilih satuan kerja pengguna ruang.";($("f-unit").value==="__other"?$("f-unit-other"):$("f-unit")).focus();return}
+  if(!name){msg.className="msg err";msg.textContent="Isi nama pemesan dulu.";$("f-name").focus();return}
+  if(isPast(req.date,req.start)){msg.className="msg err";msg.textContent="Waktu ini sudah lewat.";return}
+  state.busy=true;updateSubmit(false);msg.textContent="Memesan…";
+  try{
+    const lock=db.doc("locks/"+req.room+"_"+req.date);
+    const holder=(state.myId||"anon")+"-"+Math.random().toString(36).slice(2);
+    let got=false;
+    for(let i=0;i<5&&!got;i++){const r=await lock.acquire({holder,ttlMs:8000});got=r.acquired;if(!got)await sleep(800+Math.random()*700)}
+    if(!got)throw{code:"busy"};
+    const snap=await db.collection("bookings").where("date","==",req.date).where("room","==",req.room).get();
+    const clash=snap.docs.map(d=>d.data()).filter(b=>overlaps(b,req));
+    if(clash.length){msg.className="msg err";msg.textContent="Baru saja dipesan orang lain: "+clash[0].start+"–"+clash[0].end+" "+clash[0].title+". Pilih jam atau ruang lain.";return}
+    const doc={...req,title,name,unit,createdAt:new Date().toISOString(),by:state.myId||null};
+    if(pax>0)doc.pax=pax;
+    if(SATKER_MAP[unit])doc.dk=SATKER_MAP[unit].dk;
+    await db.collection("bookings").doc().set(doc);
+    try{localStorage.setItem("rr-pemesan",JSON.stringify({name,unit}))}catch(e){}
+    msg.className="msg ok";msg.textContent="Dipesan: "+roomName(req.room)+", "+fmtShort(req.date)+" "+req.start+"–"+req.end+".";
+    $("f-title-in").value="";$("f-pax").value="";
+    if(req.date!==state.date)setDate(req.date);
+  }catch(e){
+    msg.className="msg err";
+    msg.textContent=e&&e.code==="busy"?"Ruang ini sedang dipesan orang lain pada saat yang sama. Coba lagi beberapa detik lagi.":
+      e&&e.code==="invalid_argument"?"Akses Anda hanya untuk melihat. Minta pemilik halaman memberi akses Contributor agar bisa memesan.":
+      e&&e.code==="quota_exceeded"?"Penyimpanan jadwal penuh. Hubungi pengelola halaman.":"Pemesanan gagal tersimpan. Periksa koneksi lalu coba lagi.";
+    if(e&&e.code==="invalid_argument"){state.canWrite=false;showNotice("Anda hanya bisa melihat jadwal. Untuk memesan, minta pemilik halaman memberi akses Contributor.")}
+  }finally{state.busy=false;renderCheck()}
+}
+async function cancel(b){
+  state.confirmId=null;
+  try{await db.doc("bookings/"+b.id).delete()}
+  catch(e){showNotice("Pembatalan gagal. Coba lagi.")}
+}
+function showNotice(t){$("notice").textContent=t;$("notice").hidden=false}
+
+/* ---------- wire up ---------- */
+$("form").addEventListener("submit",book);
+$("f-start").addEventListener("change",()=>{fillEnd();renderCheck()});
+for(const id of["f-room","f-end","f-date"])$(id).addEventListener("change",renderCheck);
+$("datepick").value=state.date;
+$("datepick").addEventListener("change",e=>e.target.value&&setDate(e.target.value));
+$("today").onclick=()=>setDate(ymd(new Date()));
+$("prev").onclick=()=>{const d=parseYmd(state.date);d.setDate(d.getDate()-1);setDate(ymd(d))};
+$("next").onclick=()=>{const d=parseYmd(state.date);d.setDate(d.getDate()+1);setDate(ymd(d))};
+$("tab-day").onclick=()=>{state.tab="day";renderList()};
+$("tab-mine").onclick=()=>{state.tab="mine";renderList()};
+render();
+setInterval(()=>{if(state.date===ymd(new Date())){renderRooms();renderTimeline()}},60000);
+
+(async()=>{
+  if(!window.claude||!claude.use){showNotice("Buka halaman ini di claude.ai (dalam keadaan masuk) untuk melihat jadwal dan memesan.");return}
+  const [d,u]=await Promise.all([claude.use("db"),claude.use("user")]);
+  db=d;
+  if(u){state.myId=await u.id();state.canAdmin=await u.canEdit();const w=await u.can("data.write");if(w===false){state.canWrite=false;showNotice("Anda hanya bisa melihat jadwal. Untuk memesan, minta pemilik halaman memberi akses Contributor.")}}
+  if(!db){showNotice("Jadwal tidak bisa dimuat di tampilan ini. Masuk ke claude.ai lalu buka kembali tautan halaman ini.");render();return}
+  db.collection("bookings").limit(1000).onSnapshot(snap=>{
+    state.bookings=snap.docs.map(x=>({id:x.id,...x.data()})).filter(b=>b.room&&b.date&&b.start&&b.end);
+    state.loaded=true;render();
+  },err=>{if(err.code!=="revoked")showNotice("Pembaruan jadwal terputus. Muat ulang halaman.")});
+})();
+</script>
