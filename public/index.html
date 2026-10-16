@@ -247,7 +247,7 @@ const SATKER=[
 const SATKER_MAP={};
 for(const[dk,bidang,units]of SATKER){SATKER_MAP[dk]={name:bidang,dk};for(const[a,n]of units)SATKER_MAP[a]={name:n,dk}}
 
-const unitLabel=b=>b.unit?(SATKER_MAP[b.unit]?b.unit+" · "+SATKER_MAP[b.unit].name:b.unit):"";
+const unitLabel=b=>b.unit||"";
 const DAY_START=7*60, DAY_END=20*60, STEP=30;
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,"0");
@@ -287,9 +287,9 @@ let state={editing:null,date:ymd(new Date()),byDate:{},mine:[],mineLoaded:false,
 /* ---------- static controls ---------- */
 for(const r of ROOMS)$("f-room").append(el("option",{value:r.id},r.name));
 for(const[dk,bidang,units]of SATKER){
-  const g=el("optgroup",{label:dk+" · "+bidang});
-  g.append(el("option",{value:dk},dk+" — "+bidang));
-  for(const[a,n]of units)g.append(el("option",{value:a},a+" — "+n));
+  const g=el("optgroup",{label:dk});
+  g.append(el("option",{value:dk},dk));
+  for(const[a]of units)g.append(el("option",{value:a},a));
   $("f-unit").append(g);
 }
 $("f-unit").append(el("optgroup",{label:"Lainnya"},el("option",{value:"__other"},"Lainnya (tulis sendiri)")));
