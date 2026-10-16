@@ -4,7 +4,7 @@ Aplikasi web untuk mengecek ketersediaan dan memesan ruang rapat:
 
 - RR Executive 2 WM
 - RR Executive 3 WM
-- RR RDK Lantai 3 Soemitro
+- RR RDK Soemitro
 
 Siapa pun yang punya alamat aplikasi (dan PIN akses, bila diaktifkan) bisa melihat jadwal dan memesan, tanpa perlu akun apa pun.
 

@@ -13,7 +13,7 @@ const TIME_ZONE = process.env.APP_TIME_ZONE || "Asia/Jakarta";
 const ROOMS = {
   ex2wm: "RR Executive 2 WM",
   ex3wm: "RR Executive 3 WM",
-  rdk3s: "RR RDK Lantai 3 Soemitro",
+  rdk3s: "RR RDK Soemitro",
 };
 const DAY_START = 7 * 60, DAY_END = 20 * 60, STEP = 30;
 
