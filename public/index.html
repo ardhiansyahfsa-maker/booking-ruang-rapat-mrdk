@@ -113,6 +113,10 @@ body{margin:0}
 .foot{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;font-size:.82rem;color:var(--muted)}
 .linkbtn{border:0;background:none;color:var(--accent);padding:0;font-weight:600;text-decoration:underline}
 .admin-badge{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--busy-soft);color:var(--busy);padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:3px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.actions .primary{flex:1}
+.item .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.blk.mine{cursor:pointer}
 .inline-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .inline-form input{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 10px;width:150px}
 </style>
@@ -166,6 +170,7 @@ body{margin:0}
   <div class="lower">
     <section class="panel" aria-labelledby="f-title">
       <h2 id="f-title" style="margin-bottom:14px">Pesan ruang</h2>
+      <div class="notice" id="edit-note" hidden style="margin-bottom:12px"></div>
       <form id="form" novalidate>
         <div class="field"><label for="f-room">Ruang</label><select id="f-room"></select></div>
         <div class="field"><label for="f-date">Tanggal</label><input type="date" id="f-date"></div>
@@ -181,7 +186,7 @@ body{margin:0}
         </div>
         <div class="field"><label for="f-name">Nama pemesan</label><input id="f-name" maxlength="80" autocomplete="name"></div>
         <div class="field"><label for="f-pax">Jumlah peserta (opsional)</label><input id="f-pax" type="number" min="1" max="500" inputmode="numeric"></div>
-        <button class="btn primary" id="submit" type="submit">Pesan ruang ini</button>
+        <div class="actions"><button class="btn primary" id="submit" type="submit">Pesan ruang ini</button><button class="btn" id="cancel-edit" type="button" hidden>Batal ubah</button></div>
         <div class="msg" id="msg" aria-live="polite"></div>
       </form>
     </section>
@@ -256,7 +261,7 @@ async function api(method,url,body){
   return data;
 }
 
-let state={date:ymd(new Date()),byDate:{},mine:[],mineLoaded:false,tab:"day",confirmId:null,busy:false,admin:false};
+let state={editing:null,date:ymd(new Date()),byDate:{},mine:[],mineLoaded:false,tab:"day",confirmId:null,busy:false,admin:false};
 
 /* ---------- static controls ---------- */
 for(const r of ROOMS)$("f-room").append(el("option",{value:r.id},r.name));
@@ -295,7 +300,7 @@ async function refresh(){
 /* ---------- logic ---------- */
 const overlaps=(a,b)=>toMin(a.start)<toMin(b.end)&&toMin(b.start)<toMin(a.end);
 const dayBookings=(date,room)=>(state.byDate[date]||[]).filter(b=>!room||b.room===room).sort((a,b)=>toMin(a.start)-toMin(b.start));
-const conflicts=req=>dayBookings(req.date,req.room).filter(b=>overlaps(b,req));
+const conflicts=req=>dayBookings(req.date,req.room).filter(b=>overlaps(b,req)&&!(state.editing&&b.id===state.editing.id));
 function isPast(date,start){const now=new Date(),t=ymd(now);if(date<t)return true;if(date>t)return false;return toMin(start)<now.getHours()*60+now.getMinutes()-5}
 function formReq(){return{room:$("f-room").value,date:$("f-date").value,start:$("f-start").value,end:$("f-end").value}}
 
@@ -343,7 +348,7 @@ function renderTimeline(){
       const s=Math.max(toMin(b.start),DAY_START),e=Math.min(toMin(b.end),DAY_END);
       const blk=el("div",{class:"blk"+(b.mine?" mine":""),style:"left:calc("+pct(s)+" + 1px);width:calc("+((e-s)/span*100)+"% - 3px)",title:b.start+"–"+b.end+" · "+b.title+"\n"+unitLabel(b)+"\nPemesan: "+b.name},
         el("b",{},b.title),el("span",{},b.start+"–"+b.end+" · "+(b.unit||b.name)));
-      blk.addEventListener("click",ev=>ev.stopPropagation());
+      blk.addEventListener("click",ev=>{ev.stopPropagation();if((b.mine||state.admin)&&!finished(b))startEdit(b)});
       track.append(blk);
     }
     track.addEventListener("click",ev=>{
@@ -365,9 +370,12 @@ function renderCheck(){
   const box=$("check"),req=formReq();box.replaceChildren();box.className="check";
   if(!req.date){box.textContent="Pilih tanggal.";updateSubmit(false);return}
   if(!state.byDate[req.date]){box.textContent="Memeriksa ketersediaan…";updateSubmit(false);return}
-  if(isPast(req.date,req.start)){box.classList.add("busy");box.textContent="Waktu ini sudah lewat. Pilih jam yang akan datang.";updateSubmit(false);return}
+  const ed=state.editing,startKept=ed&&ed.date===req.date&&ed.start===req.start;
+  const nowD=new Date(),nowMin=nowD.getHours()*60+nowD.getMinutes(),todayS=ymd(nowD);
+  const endPast=req.date<todayS||(req.date===todayS&&toMin(req.end)<=nowMin);
+  if(endPast||(!startKept&&isPast(req.date,req.start))){box.classList.add("busy");box.textContent="Waktu ini sudah lewat. Pilih jam yang akan datang.";updateSubmit(false);return}
   const c=conflicts(req);
-  if(!c.length){box.classList.add("ok");box.textContent="✓ "+roomName(req.room)+" tersedia "+req.start+"–"+req.end+", "+fmtShort(req.date)+".";updateSubmit(true);return}
+  if(!c.length){box.classList.add("ok");box.textContent="✓ "+roomName(req.room)+(ed?" bisa dipakai ":" tersedia ")+req.start+"–"+req.end+", "+fmtShort(req.date)+".";updateSubmit(true);return}
   box.classList.add("busy");
   box.append("✕ Bentrok dengan "+c.map(b=>b.start+"–"+b.end+" "+b.title+" ("+(b.unit||b.name)+")").join("; ")+".");
   const free=ROOMS.filter(r=>r.id!==req.room&&!conflicts({...req,room:r.id}).length);
@@ -392,10 +400,12 @@ function renderList(){
   if(!rows.length){list.append(el("div",{class:"empty"},state.tab==="day"?"Belum ada pesanan pada "+fmtDay(state.date)+". Ketiga ruang tersedia sepanjang hari.":"Anda belum punya pesanan mendatang dari browser ini."));return}
   for(const b of rows){
     const canCancel=(b.mine||state.admin)&&(b.date>=t||state.admin);
-    let action="";
+    const canEdit=(b.mine||state.admin)&&!finished(b);
+    const action=el("div",{class:"btns"});
+    if(canEdit)action.append(el("button",{class:"btn",type:"button",onclick:()=>startEdit(b)},state.editing&&state.editing.id===b.id?"Sedang diubah":"Ubah"));
     if(canCancel){
       const confirming=state.confirmId===b.id;
-      action=el("button",{class:"btn danger",type:"button",onclick:()=>confirming?cancel(b):(state.confirmId=b.id,renderList())},confirming?"Ya, batalkan":"Batalkan");
+      action.append(el("button",{class:"btn danger",type:"button",onclick:()=>confirming?cancel(b):(state.confirmId=b.id,renderList())},confirming?"Ya, batalkan":"Batalkan"));
     }
     list.append(el("div",{class:"item"},
       el("div",{class:"t"},b.start+"–"+b.end,el("small",{},state.tab==="mine"?fmtShort(b.date):"")),
@@ -421,6 +431,42 @@ function renderAdmin(){
   area.append(el("button",{class:"linkbtn",type:"button",onclick:()=>{state.adminOpen=true;renderAdmin()}},"Masuk sebagai admin"));
 }
 
+/* ---------- ubah pesanan ---------- */
+function finished(b){const n=new Date(),t=ymd(n);return b.date<t||(b.date===t&&toMin(b.end)<=n.getHours()*60+n.getMinutes())}
+function setUnit(u){
+  if(!u){$("f-unit").value="";$("f-unit-other").hidden=true;return}
+  if(SATKER_MAP[u]){$("f-unit").value=u;$("f-unit-other").hidden=true}
+  else{$("f-unit").value="__other";$("f-unit-other").value=u;$("f-unit-other").hidden=false}
+}
+let draftBeforeEdit=null;
+function startEdit(b){
+  if(!state.editing)draftBeforeEdit={title:$("f-title-in").value,name:$("f-name").value,unit:$("f-unit").value==="__other"?$("f-unit-other").value:$("f-unit").value,pax:$("f-pax").value};
+  state.editing=b;state.confirmId=null;
+  $("f-room").value=b.room;$("f-date").value=b.date;
+  if(![...$("f-start").options].some(o=>o.value===b.start))$("f-start").append(el("option",{value:b.start},b.start));
+  $("f-start").value=b.start;fillEnd();$("f-end").value=b.end;
+  $("f-title-in").value=b.title;setUnit(b.unit);$("f-name").value=b.name;$("f-pax").value=b.pax||"";
+  $("f-title").textContent="Ubah pesanan";
+  const note=$("edit-note");note.replaceChildren("Mengubah: ",el("b",{},b.title)," · "+roomName(b.room)+", "+fmtShort(b.date)+" "+b.start+"–"+b.end);note.hidden=false;
+  $("submit").textContent="Simpan perubahan";$("cancel-edit").hidden=false;
+  $("msg").className="msg";$("msg").textContent="";
+  if(!state.byDate[b.date])refresh();
+  render();
+  $("f-title").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+}
+function stopEdit(saved){
+  state.editing=null;
+  $("f-title").textContent="Pesan ruang";$("edit-note").hidden=true;
+  $("submit").textContent="Pesan ruang ini";$("cancel-edit").hidden=true;
+  const d=draftBeforeEdit||{};draftBeforeEdit=null;
+  $("f-title-in").value=saved?"":(d.title||"");$("f-pax").value=saved?"":(d.pax||"");
+  if(d.name!==undefined)$("f-name").value=d.name;
+  setUnit(d.unit||"");
+  if(!saved){$("msg").className="msg";$("msg").textContent=""}
+  render();
+}
+$("cancel-edit").addEventListener("click",()=>stopEdit(false));
+
 /* ---------- actions ---------- */
 async function book(ev){
   ev.preventDefault();
@@ -435,18 +481,21 @@ async function book(ev){
   try{
     const body={...req,title,name,unit,dk:SATKER_MAP[unit]?SATKER_MAP[unit].dk:null};
     if(paxRaw)body.pax=parseInt(paxRaw,10);
-    const r=await api("POST","/api/bookings",body);
-    store.set("rr-pemesan",JSON.stringify({name,unit}));
-    msg.className="msg ok";msg.textContent="Dipesan: "+roomName(r.booking.room)+", "+fmtShort(r.booking.date)+" "+r.booking.start+"–"+r.booking.end+".";
+    const editing=state.editing;
+    const r=editing?await api("PUT","/api/bookings/"+editing.id,body):await api("POST","/api/bookings",body);
+    if(!editing)store.set("rr-pemesan",JSON.stringify({name,unit}));
+    if(editing)stopEdit(true);
+    msg.className="msg ok";msg.textContent=(editing?"Perubahan disimpan: ":"Dipesan: ")+roomName(r.booking.room)+", "+fmtShort(r.booking.date)+" "+r.booking.start+"–"+r.booking.end+".";
     $("f-title-in").value="";$("f-pax").value="";
     if(req.date!==state.date){state.date=req.date;$("datepick").value=req.date}
   }catch(e){
     msg.className="msg err";
-    msg.textContent=e.status===409?"Baru saja dipesan orang lain. "+e.message+" Pilih jam atau ruang lain.":e.message;
+    msg.textContent=e.status===409?"Slot ini sudah terisi. "+e.message+" Pilih jam atau ruang lain.":e.message;
   }finally{state.busy=false;await refresh()}
 }
 async function cancel(b){
   state.confirmId=null;
+  if(state.editing&&state.editing.id===b.id)stopEdit(false);
   try{await api("DELETE","/api/bookings/"+b.id)}
   catch(e){showNotice(e.message)}
   await refresh();

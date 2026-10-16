@@ -46,6 +46,7 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS bookings_room_date ON bookings (room, date);
     CREATE INDEX IF NOT EXISTS bookings_date ON bookings (date);
+    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_at timestamptz;
   `);
 }
 
@@ -129,47 +130,92 @@ app.get("/api/bookings/mine", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.post("/api/bookings", async (req, res, next) => {
-  const b = req.body || {};
-  const oh = ownerHash(req);
-  const fail = (message) => res.status(400).json({ error: "invalid", message });
-  if (!oh) return fail("Browser ini belum punya penanda pemesan. Muat ulang halaman lalu coba lagi.");
-  if (!ROOMS[b.room]) return fail("Ruang tidak dikenal.");
-  if (!isDate(b.date)) return fail("Tanggal tidak valid.");
-  if (!isHM(b.start) || !isHM(b.end)) return fail("Jam tidak valid.");
+// Validasi isian pesanan. `existing` diisi saat mengubah pesanan.
+function validate(b, existing) {
+  if (!ROOMS[b.room]) return { error: "Ruang tidak dikenal." };
+  if (!isDate(b.date)) return { error: "Tanggal tidak valid." };
+  if (!isHM(b.start) || !isHM(b.end)) return { error: "Jam tidak valid." };
   const s = toMin(b.start), e = toMin(b.end);
-  if (s % STEP || e % STEP || s < DAY_START || e > DAY_END || e <= s) return fail("Jam harus antara 07:00–20:00, kelipatan 30 menit, dan jam selesai setelah jam mulai.");
+  if (s % STEP || e % STEP || s < DAY_START || e > DAY_END || e <= s) return { error: "Jam harus antara 07:00–20:00, kelipatan 30 menit, dan jam selesai setelah jam mulai." };
   const now = nowLocal();
-  if (b.date < now.date || (b.date === now.date && s < now.min - 5)) return fail("Waktu ini sudah lewat.");
+  // Saat mengubah, jam mulai yang tidak diubah boleh sudah lewat (mis. memperpanjang rapat yang sedang berjalan)
+  const startUnchanged = existing && existing.date === b.date && existing.start_min === s;
+  if (b.date < now.date) return { error: "Tanggal ini sudah lewat." };
+  if (!startUnchanged && b.date === now.date && s < now.min - 5) return { error: "Waktu ini sudah lewat." };
+  if (b.date === now.date && e <= now.min) return { error: "Jam selesai sudah lewat." };
   const title = cleanText(b.title, 120), unit = cleanText(b.unit, 80), name = cleanText(b.name, 80), dk = cleanText(b.dk, 10) || null;
-  if (!title) return fail("Isi agenda rapat.");
-  if (!unit) return fail("Pilih satuan kerja pengguna ruang.");
-  if (!name) return fail("Isi nama pemesan.");
+  if (!title) return { error: "Isi agenda rapat." };
+  if (!unit) return { error: "Pilih satuan kerja pengguna ruang." };
+  if (!name) return { error: "Isi nama pemesan." };
   let pax = null;
   if (b.pax !== undefined && b.pax !== null && b.pax !== "") {
     pax = Number(b.pax);
-    if (!Number.isInteger(pax) || pax < 1 || pax > 500) return fail("Jumlah peserta harus 1–500.");
+    if (!Number.isInteger(pax) || pax < 1 || pax > 500) return { error: "Jumlah peserta harus 1–500." };
   }
+  return { v: { room: b.room, date: b.date, s, e, title, unit, dk, name, pax } };
+}
+
+const RETURNING = `RETURNING id, room, to_char(date,'YYYY-MM-DD') AS date, start_min, end_min, title, unit, dk, name, pax, owner_hash, created_at`;
+
+// Dijalankan di dalam transaksi: kunci ruang+tanggal, lalu cari bentrok (selain pesanan `exceptId`)
+async function lockAndFindClash(client, v, exceptId) {
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [v.room + "|" + v.date]);
+  const q = await client.query(
+    `${SELECT} WHERE room = $1 AND date = $2 AND start_min < $4 AND $3 < end_min AND ($5::uuid IS NULL OR id <> $5::uuid) ORDER BY start_min LIMIT 1`,
+    [v.room, v.date, v.s, v.e, exceptId || null]
+  );
+  return q.rows[0] || null;
+}
+const conflictBody = (row, req) => { const c = rowOut(row, req); return { error: "conflict", message: `Bentrok dengan ${c.start}–${c.end} ${c.title} (${c.unit}).`, conflict: c }; };
+
+app.post("/api/bookings", async (req, res, next) => {
+  const oh = ownerHash(req);
+  if (!oh) return res.status(400).json({ error: "invalid", message: "Browser ini belum punya penanda pemesan. Muat ulang halaman lalu coba lagi." });
+  const { v, error } = validate(req.body || {});
+  if (error) return res.status(400).json({ error: "invalid", message: error });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    // Kunci per ruang+tanggal agar dua pesanan bersamaan tidak sama-sama lolos
-    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [b.room + "|" + b.date]);
-    const clash = await client.query(`${SELECT} WHERE room = $1 AND date = $2 AND start_min < $4 AND $3 < end_min ORDER BY start_min LIMIT 1`, [b.room, b.date, s, e]);
-    if (clash.rows.length) {
-      await client.query("ROLLBACK");
-      const c = rowOut(clash.rows[0], req);
-      return res.status(409).json({ error: "conflict", message: `Bentrok dengan ${c.start}–${c.end} ${c.title} (${c.unit}).`, conflict: c });
-    }
+    const clash = await lockAndFindClash(client, v);
+    if (clash) { await client.query("ROLLBACK"); return res.status(409).json(conflictBody(clash, req)); }
     const ins = await client.query(
       `INSERT INTO bookings (room, date, start_min, end_min, title, unit, dk, name, pax, owner_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING id, room, to_char(date,'YYYY-MM-DD') AS date, start_min, end_min, title, unit, dk, name, pax, owner_hash, created_at`,
-      [b.room, b.date, s, e, title, unit, dk, name, pax, oh]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ${RETURNING}`,
+      [v.room, v.date, v.s, v.e, v.title, v.unit, v.dk, v.name, v.pax, oh]
     );
     await client.query("COMMIT");
     res.status(201).json({ booking: rowOut(ins.rows[0], req) });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+app.put("/api/bookings/:id", async (req, res, next) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = (await client.query(`${SELECT} WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!cur) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan atau sudah dibatalkan." }); }
+    const admin = isAdmin(req), oh = ownerHash(req);
+    if (!admin && !(oh && oh === cur.owner_hash)) { await client.query("ROLLBACK"); return res.status(403).json({ error: "forbidden", message: "Hanya pemesan atau admin yang bisa mengubah pesanan ini." }); }
+    const now = nowLocal();
+    if (cur.date < now.date || (cur.date === now.date && cur.end_min <= now.min)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "past", message: "Rapat ini sudah selesai sehingga tidak bisa diubah." }); }
+    const { v, error } = validate(req.body || {}, cur);
+    if (error) { await client.query("ROLLBACK"); return res.status(400).json({ error: "invalid", message: error }); }
+    const clash = await lockAndFindClash(client, v, cur.id);
+    if (clash) { await client.query("ROLLBACK"); return res.status(409).json(conflictBody(clash, req)); }
+    const up = await client.query(
+      `UPDATE bookings SET room=$2, date=$3, start_min=$4, end_min=$5, title=$6, unit=$7, dk=$8, name=$9, pax=$10, updated_at=now()
+       WHERE id=$1 ${RETURNING}`,
+      [cur.id, v.room, v.date, v.s, v.e, v.title, v.unit, v.dk, v.name, v.pax]
+    );
+    await client.query("COMMIT");
+    res.json({ booking: rowOut(up.rows[0], req) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     next(err);

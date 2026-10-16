@@ -15,7 +15,7 @@ Siapa pun yang punya alamat aplikasi (dan PIN akses, bila diaktifkan) bisa melih
 - Cek bentrok otomatis, beserta saran ruang lain yang kosong di jam yang sama
 - Anti pesanan ganda: bila dua orang memesan slot yang sama bersamaan, hanya satu yang berhasil (dikunci di database)
 - Pilihan pengguna ruang berdasarkan satuan kerja OJK (DK1–DK9 beserta deputi komisioner dan departemennya), atau isian bebas
-- Tab "Pesanan saya" dan pembatalan pesanan sendiri
+- Tab "Pesanan saya", ubah pesanan (ruang, tanggal, jam, agenda, pengguna), dan pembatalan pesanan sendiri
 - PIN akses unit (opsional) dan mode admin untuk membatalkan pesanan siapa pun
 - Jadwal diperbarui otomatis setiap 15 detik
 
@@ -67,7 +67,7 @@ Buka `http://localhost:3000`.
 
 ## Cara kerja kepemilikan pesanan
 
-Setiap browser mendapat penanda acak yang disimpan di browser itu. Pesanan yang dibuat dari browser tersebut ditandai "Anda" dan bisa dibatalkan dari sana. Bila pemesan berganti perangkat atau menghapus data browser, pembatalan dilakukan oleh admin.
+Setiap browser mendapat penanda acak yang disimpan di browser itu. Pesanan yang dibuat dari browser tersebut ditandai "Anda" dan bisa diubah atau dibatalkan dari sana. Rapat yang sudah selesai tidak bisa diubah. Bila pemesan berganti perangkat atau menghapus data browser, pembatalan dilakukan oleh admin.
 
 ## API
 
@@ -79,6 +79,7 @@ Semua endpoint `/api` (kecuali `/api/config`) memerlukan header `X-Access-Pin` b
 | `GET`    | `/api/bookings?from=&to=`         | Daftar pesanan pada rentang tanggal          |
 | `GET`    | `/api/bookings/mine`              | Pesanan mendatang milik browser ini          |
 | `POST`   | `/api/bookings`                   | Buat pesanan (409 bila bentrok)              |
+| `PUT`    | `/api/bookings/:id`               | Ubah pesanan (pemilik atau admin; 409 bila bentrok) |
 | `DELETE` | `/api/bookings/:id`               | Batalkan pesanan (pemilik atau admin)        |
 
 ## Catatan kebijakan
