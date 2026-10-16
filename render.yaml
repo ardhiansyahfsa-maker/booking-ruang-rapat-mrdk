@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: booking-ruang-rapat-mrdk
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: booking-ruang-rapat-db
+          property: connectionString
+      - key: ACCESS_PIN
+        sync: false
+      - key: ADMIN_PIN
+        sync: false
+      - key: APP_TIME_ZONE
+        value: Asia/Jakarta
+
+databases:
+  - name: booking-ruang-rapat-db
+    plan: free
+    region: singapore
+    databaseName: booking_ruang_rapat
+    ipAllowList: []

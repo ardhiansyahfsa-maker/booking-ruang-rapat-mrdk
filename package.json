@@ -1,0 +1,26 @@
+{
+  "name": "booking-ruang-rapat-mrdk",
+  "version": "1.0.0",
+  "description": "Booking Ruang Rapat MRDK",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ardhiansyahfsa-maker/booking-ruang-rapat-mrdk.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/ardhiansyahfsa-maker/booking-ruang-rapat-mrdk/issues"
+  },
+  "homepage": "https://github.com/ardhiansyahfsa-maker/booking-ruang-rapat-mrdk#readme",
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
