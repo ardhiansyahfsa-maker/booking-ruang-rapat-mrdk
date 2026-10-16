@@ -116,7 +116,26 @@ body{margin:0}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .actions .primary{flex:1}
 .item .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.blk.mine{cursor:pointer}
+.blk{cursor:pointer}
+.blk:hover,.blk:focus-visible{filter:brightness(1.08)}
+.blk.live{box-shadow:inset 0 0 0 1px var(--busy)}
+.room .more{border:0;background:none;padding:0;color:var(--accent);font-weight:600;font-size:.85rem;text-align:left;text-decoration:underline;width:fit-content}
+dialog.detail{border:1px solid var(--line);border-radius:12px;padding:0;background:var(--surface);color:var(--fg);width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+dialog.detail::backdrop{background:rgba(5,10,15,.55)}
+.detail .d-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 18px 0}
+.detail .d-head h3{margin:4px 0 0;font-size:1.15rem;line-height:1.3;overflow-wrap:anywhere}
+.detail .x{border:0;background:none;font-size:1.5rem;line-height:1;padding:2px 6px;color:var(--muted);border-radius:6px}
+.detail dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px 12px;margin:16px 18px;font-size:.92rem}
+.detail dt{color:var(--muted);font-weight:500}
+.detail dd{margin:0;overflow-wrap:anywhere}
+.detail .d-act{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px 18px;border-top:1px solid var(--line)}
+.detail .d-act .btn{flex:1;min-height:42px}
+.pill.soon{background:var(--accent-soft);color:var(--accent)}
+.pill.done{background:var(--bg);color:var(--muted)}
+@media (max-width:560px){
+  dialog.detail{width:100%;max-width:100%;margin:auto 0 0;border-radius:14px 14px 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom,0px)}
+  .detail dl{grid-template-columns:96px minmax(0,1fr)}
+}
 .inline-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .inline-form input{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 10px;width:150px}
 </style>
@@ -199,6 +218,8 @@ body{margin:0}
       <div class="list" id="list"><div class="empty">Memuat jadwal…</div></div>
     </section>
   </div>
+
+  <dialog class="detail" id="detail" aria-labelledby="d-title"></dialog>
 
   <div class="foot">
     <span>Pesanan Anda dikenali dari browser ini. Untuk membatalkan dari perangkat lain, hubungi admin.</span>
@@ -329,7 +350,10 @@ function renderRooms(){
       pill=list.length?el("span",{class:"pill busy"},list.length+" pesanan"):el("span",{class:"pill ok"},"Belum ada pesanan");
       sub=list.length?"Terpakai "+(used/60).toLocaleString("id-ID",{maximumFractionDigits:1})+" jam dari 13 jam":"Bebas 07:00–20:00";
     }
-    box.append(el("div",{class:"room"},el("div",{class:"name"},r.name),pill,el("div",{class:"sub"},sub)));
+    const card=el("div",{class:"room"},el("div",{class:"name"},r.name),pill,el("div",{class:"sub"},sub));
+    const focus=isToday&&loaded?(list.find(b=>toMin(b.start)<=nm&&nm<toMin(b.end))||list.find(b=>toMin(b.start)>nm)):null;
+    if(focus)card.append(el("button",{class:"more",type:"button",onclick:()=>showDetail(focus)},toMin(focus.start)<=nm?"Lihat detail rapat":"Lihat detail rapat berikutnya"));
+    box.append(card);
   }
 }
 function renderTimeline(){
@@ -346,9 +370,11 @@ function renderTimeline(){
     if(state.date===t&&nm>=DAY_START&&nm<=DAY_END)track.append(el("div",{class:"now",style:"left:"+pct(nm)}));
     for(const b of dayBookings(state.date,r.id)){
       const s=Math.max(toMin(b.start),DAY_START),e=Math.min(toMin(b.end),DAY_END);
-      const blk=el("div",{class:"blk"+(b.mine?" mine":""),style:"left:calc("+pct(s)+" + 1px);width:calc("+((e-s)/span*100)+"% - 3px)",title:b.start+"–"+b.end+" · "+b.title+"\n"+unitLabel(b)+"\nPemesan: "+b.name},
+      const live=state.date===t&&toMin(b.start)<=nm&&nm<toMin(b.end);
+      const blk=el("div",{class:"blk"+(b.mine?" mine":"")+(live?" live":""),role:"button",tabindex:"0","aria-label":"Detail "+b.title+", "+b.start+" sampai "+b.end,style:"left:calc("+pct(s)+" + 1px);width:calc("+((e-s)/span*100)+"% - 3px)",title:b.start+"–"+b.end+" · "+b.title+"\n"+unitLabel(b)+"\nPemesan: "+b.name},
         el("b",{},b.title),el("span",{},b.start+"–"+b.end+" · "+(b.unit||b.name)));
-      blk.addEventListener("click",ev=>{ev.stopPropagation();if((b.mine||state.admin)&&!finished(b))startEdit(b)});
+      blk.addEventListener("click",ev=>{ev.stopPropagation();showDetail(b)});
+      blk.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();ev.stopPropagation();showDetail(b)}});
       track.append(blk);
     }
     track.addEventListener("click",ev=>{
@@ -430,6 +456,33 @@ function renderAdmin(){
   }
   area.append(el("button",{class:"linkbtn",type:"button",onclick:()=>{state.adminOpen=true;renderAdmin()}},"Masuk sebagai admin"));
 }
+
+/* ---------- detail rapat ---------- */
+function meetingStatus(b){
+  const n=new Date(),t=ymd(n),nm=n.getHours()*60+n.getMinutes();
+  if(b.date<t||(b.date===t&&toMin(b.end)<=nm))return["done","Selesai"];
+  if(b.date===t&&toMin(b.start)<=nm){const left=toMin(b.end)-nm;return["busy","Sedang berlangsung · sisa "+(left>=60?Math.floor(left/60)+" jam "+(left%60?left%60+" menit":""):left+" menit").trim()]}
+  if(b.date===t){const until=toMin(b.start)-nm;return["soon","Mulai "+(until>=60?"dalam "+Math.floor(until/60)+" jam "+(until%60?until%60+" menit":""):"dalam "+until+" menit").trim()]}
+  return["soon","Terjadwal"];
+}
+function showDetail(b){
+  const d=$("detail");d.replaceChildren();
+  const[cls,label]=meetingStatus(b);
+  const close=()=>d.close();
+  d.append(el("div",{class:"d-head"},
+    el("div",{},el("span",{class:"pill "+cls},label),el("h3",{id:"d-title"},b.title)),
+    el("button",{class:"x",type:"button","aria-label":"Tutup",onclick:close},"×")));
+  const rows=[["Ruang",roomName(b.room)],["Tanggal",fmtDay(b.date)],["Waktu",b.start+"–"+b.end+" WIB"],["Pengguna",unitLabel(b)||"–"],["Pemesan",b.name+(b.mine?" (Anda)":"")]];
+  if(b.pax)rows.push(["Peserta",b.pax+" orang"]);
+  const dl=el("dl");for(const[k,v]of rows)dl.append(el("dt",{},k),el("dd",{class:k==="Waktu"?"mono":""},v));
+  d.append(dl);
+  const act=el("div",{class:"d-act"});
+  if((b.mine||state.admin)&&!finished(b))act.append(el("button",{class:"btn",type:"button",onclick:()=>{close();startEdit(b)}},"Ubah"));
+  act.append(el("button",{class:"btn primary",type:"button",onclick:close},"Tutup"));
+  d.append(act);
+  if(typeof d.showModal==="function")d.showModal();else d.setAttribute("open","");
+}
+$("detail").addEventListener("click",ev=>{if(ev.target===$("detail"))$("detail").close()});
 
 /* ---------- ubah pesanan ---------- */
 function finished(b){const n=new Date(),t=ymd(n);return b.date<t||(b.date===t&&toMin(b.end)<=n.getHours()*60+n.getMinutes())}
