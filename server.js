@@ -175,13 +175,13 @@ app.get("/api/bookings/export.xlsx", async (req, res, next) => {
 
     const sum = wb.addWorksheet("Ringkasan");
     sum.columns = [{ width: 26 }, { width: 16 }, { width: 12 }];
-    sum.addRow(["Rekap pesanan ruang rapat"]).font = { bold: true, size: 13 };
+    sum.addRow(["Rekap booking ruang rapat"]).font = { bold: true, size: 13 };
     sum.addRow(["Periode", `${fmtDMY(from)} s.d. ${fmtDMY(to)}`]);
     sum.addRow(["Ruang", room ? ROOMS[room] : "Semua ruang"]);
     const n = nowLocal();
     sum.addRow(["Diunduh", `${fmtDMY(n.date)} ${toHM(n.min)} WIB`]);
     sum.addRow([]);
-    sum.addRow(["Ruang", "Jumlah pesanan", "Total jam"]).font = { bold: true };
+    sum.addRow(["Ruang", "Jumlah booking", "Total jam"]).font = { bold: true };
     let totalN = 0, totalMin = 0;
     for (const [id, nm] of Object.entries(ROOMS)) {
       if (room && id !== room) continue;
@@ -211,7 +211,7 @@ app.get("/api/bookings/mine", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Validasi isian pesanan. `existing` diisi saat mengubah pesanan.
+// Validasi isian booking. `existing` diisi saat mengubah booking.
 function validate(b, existing) {
   if (!ROOMS[b.room]) return { error: "Ruang tidak dikenal." };
   if (!isDate(b.date)) return { error: "Tanggal tidak valid." };
@@ -238,7 +238,7 @@ function validate(b, existing) {
 
 const RETURNING = `RETURNING id, room, to_char(date,'YYYY-MM-DD') AS date, start_min, end_min, title, unit, dk, name, pax, owner_hash, created_at`;
 
-// Dijalankan di dalam transaksi: kunci ruang+tanggal, lalu cari bentrok (selain pesanan `exceptId`)
+// Dijalankan di dalam transaksi: kunci ruang+tanggal, lalu cari bentrok (selain booking `exceptId`)
 async function lockAndFindClash(client, v, exceptId) {
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [v.room + "|" + v.date]);
   const q = await client.query(
@@ -276,14 +276,14 @@ app.post("/api/bookings", async (req, res, next) => {
 });
 
 app.put("/api/bookings/:id", async (req, res, next) => {
-  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan." });
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: "not_found", message: "Booking tidak ditemukan." });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const cur = (await client.query(`${SELECT} WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
-    if (!cur) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan atau sudah dibatalkan." }); }
+    if (!cur) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found", message: "Booking tidak ditemukan atau sudah dibatalkan." }); }
     const admin = isAdmin(req), oh = ownerHash(req);
-    if (!admin && !(oh && oh === cur.owner_hash)) { await client.query("ROLLBACK"); return res.status(403).json({ error: "forbidden", message: "Hanya pemesan atau admin yang bisa mengubah pesanan ini." }); }
+    if (!admin && !(oh && oh === cur.owner_hash)) { await client.query("ROLLBACK"); return res.status(403).json({ error: "forbidden", message: "Hanya pemesan atau admin yang bisa mengubah booking ini." }); }
     const now = nowLocal();
     if (cur.date < now.date || (cur.date === now.date && cur.end_min <= now.min)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "past", message: "Rapat ini sudah selesai sehingga tidak bisa diubah." }); }
     const { v, error } = validate(req.body || {}, cur);
@@ -307,14 +307,14 @@ app.put("/api/bookings/:id", async (req, res, next) => {
 
 app.delete("/api/bookings/:id", async (req, res, next) => {
   try {
-    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan." });
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: "not_found", message: "Booking tidak ditemukan." });
     const { rows } = await pool.query(`${SELECT} WHERE id = $1`, [req.params.id]);
     const r = rows[0];
-    if (!r) return res.status(404).json({ error: "not_found", message: "Pesanan tidak ditemukan atau sudah dibatalkan." });
+    if (!r) return res.status(404).json({ error: "not_found", message: "Booking tidak ditemukan atau sudah dibatalkan." });
     const admin = isAdmin(req);
     const oh = ownerHash(req);
-    if (!admin && !(oh && oh === r.owner_hash)) return res.status(403).json({ error: "forbidden", message: "Hanya pemesan atau admin yang bisa membatalkan pesanan ini." });
-    if (!admin && r.date < nowLocal().date) return res.status(400).json({ error: "past", message: "Pesanan yang sudah lewat tidak bisa dibatalkan." });
+    if (!admin && !(oh && oh === r.owner_hash)) return res.status(403).json({ error: "forbidden", message: "Hanya pemesan atau admin yang bisa membatalkan booking ini." });
+    if (!admin && r.date < nowLocal().date) return res.status(400).json({ error: "past", message: "Booking yang sudah lewat tidak bisa dibatalkan." });
     await pool.query("DELETE FROM bookings WHERE id = $1", [r.id]);
     res.json({ ok: true });
   } catch (e) { next(e); }

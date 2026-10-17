@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one working column — status per ruang, papan jadwal harian (timeline), lalu formulir pesan + daftar pesanan berdampingan */
+/* Layout: one working column — status per ruang, papan jadwal harian (timeline), lalu formulir pesan + daftar booking berdampingan */
 :root{
   --bg:#f3f5f7; --surface:#ffffff; --line:#d9dfe5; --fg:#17212b; --muted:#5b6876;
   --accent:#0f5e78; --accent-ink:#ffffff; --accent-soft:#dcecf1;
@@ -205,7 +205,7 @@ dialog.detail::backdrop{background:rgba(5,10,15,.55)}
     <div class="tl-scroll"><div class="tl" id="timeline"></div></div>
     <div class="legend">
       <span><i style="background:var(--accent-soft);border-left:3px solid var(--accent)"></i>Terpesan</span>
-      <span><i style="background:var(--mine-soft);border-left:3px solid var(--mine)"></i>Pesanan Anda</span>
+      <span><i style="background:var(--mine-soft);border-left:3px solid var(--mine)"></i>Booking Anda</span>
       <span><i style="background:var(--busy)"></i>Waktu sekarang</span>
     </div>
   </section>
@@ -236,8 +236,8 @@ dialog.detail::backdrop{background:rgba(5,10,15,.55)}
 
     <section class="panel">
       <div class="tabs" role="tablist">
-        <button role="tab" id="tab-day" aria-selected="true">Pesanan tanggal ini</button>
-        <button role="tab" id="tab-mine" aria-selected="false">Pesanan saya</button>
+        <button role="tab" id="tab-day" aria-selected="true">Booking tanggal ini</button>
+        <button role="tab" id="tab-mine" aria-selected="false">Booking saya</button>
       </div>
       <div class="list" id="list"><div class="empty">Memuat jadwal…</div></div>
     </section>
@@ -246,8 +246,8 @@ dialog.detail::backdrop{background:rgba(5,10,15,.55)}
   <section class="panel" id="rekap" aria-labelledby="rk-title">
     <div class="rk-head">
       <div>
-        <h2 id="rk-title">Rekap pesanan</h2>
-        <div style="font-size:.85rem;color:var(--muted)">Semua pesanan pada rentang tanggal yang dipilih</div>
+        <h2 id="rk-title">Rekap booking</h2>
+        <div style="font-size:.85rem;color:var(--muted)">Semua booking pada rentang tanggal yang dipilih</div>
       </div>
       <div class="rk-ctrl">
         <div class="field"><label for="rk-from">Dari</label><input type="date" id="rk-from"></div>
@@ -269,13 +269,13 @@ dialog.detail::backdrop{background:rgba(5,10,15,.55)}
       <thead><tr><th>Tanggal</th><th>Waktu</th><th>Ruang</th><th>Agenda</th><th>Satker</th><th>Pemesan</th><th>Peserta</th></tr></thead>
       <tbody id="rk-body"><tr><td colspan="7" class="empty">Memuat rekap…</td></tr></tbody>
     </table></div>
-    <div class="rk-note">Ketuk baris untuk melihat detail. File Excel berisi sheet <b>Rekap</b> (semua pesanan) dan <b>Ringkasan</b> (jumlah pesanan dan jam per ruang).</div>
+    <div class="rk-note">Ketuk baris untuk melihat detail. File Excel berisi sheet <b>Rekap</b> (semua booking) dan <b>Ringkasan</b> (jumlah booking dan jam per ruang).</div>
   </section>
 
   <dialog class="detail" id="detail" aria-labelledby="d-title"></dialog>
 
   <div class="foot">
-    <span>Pesanan Anda dikenali dari browser ini. Untuk membatalkan dari perangkat lain, hubungi admin.</span>
+    <span>Booking Anda dikenali dari browser ini. Untuk membatalkan dari perangkat lain, hubungi admin.</span>
     <span id="admin-area"></span>
   </div>
 </div>
@@ -400,7 +400,7 @@ function renderRooms(){
       else{pill=el("span",{class:"pill ok"},"Tersedia sekarang");sub=nxt?"Berikutnya "+nxt.start+" · "+nxt.title:"Kosong sampai akhir hari"}
     }else{
       const used=list.reduce((s,b)=>s+toMin(b.end)-toMin(b.start),0);
-      pill=list.length?el("span",{class:"pill busy"},list.length+" pesanan"):el("span",{class:"pill ok"},"Belum ada pesanan");
+      pill=list.length?el("span",{class:"pill busy"},list.length+" booking"):el("span",{class:"pill ok"},"Belum ada booking");
       sub=list.length?"Terpakai "+(used/60).toLocaleString("id-ID",{maximumFractionDigits:1})+" jam dari 13 jam":"Bebas 07:00–20:00";
     }
     const card=el("div",{class:"room"},el("div",{class:"name"},r.name),pill,el("div",{class:"sub"},sub));
@@ -476,7 +476,7 @@ function renderList(){
     if(!state.mineLoaded){list.append(el("div",{class:"empty"},"Memuat…"));return}
     rows=state.mine;
   }
-  if(!rows.length){list.append(el("div",{class:"empty"},state.tab==="day"?"Belum ada pesanan pada "+fmtDay(state.date)+". Ketiga ruang tersedia sepanjang hari.":"Anda belum punya pesanan mendatang dari browser ini."));return}
+  if(!rows.length){list.append(el("div",{class:"empty"},state.tab==="day"?"Belum ada booking pada "+fmtDay(state.date)+". Ketiga ruang tersedia sepanjang hari.":"Anda belum punya booking mendatang dari browser ini."));return}
   for(const b of rows){
     const canCancel=(b.mine||state.admin)&&(b.date>=t||state.admin);
     const canEdit=(b.mine||state.admin)&&!finished(b);
@@ -547,11 +547,11 @@ function renderRekap(){
   for(const r of ROOMS){
     if(rk.room&&r.id!==rk.room)continue;
     const l=rows.filter(b=>b.room===r.id);
-    sum.append(el("div",{class:"rk-stat"},el("div",{class:"k"},r.name),el("div",{class:"v"},l.length+" pesanan · "+fmtH(hours(l)))));
+    sum.append(el("div",{class:"rk-stat"},el("div",{class:"k"},r.name),el("div",{class:"v"},l.length+" booking · "+fmtH(hours(l)))));
   }
-  if(!rk.room)sum.append(el("div",{class:"rk-stat total"},el("div",{class:"k"},"Total "+fmtShort(rk.from)+" – "+fmtShort(rk.to)),el("div",{class:"v"},rows.length+" pesanan · "+fmtH(hours(rows)))));
+  if(!rk.room)sum.append(el("div",{class:"rk-stat total"},el("div",{class:"k"},"Total "+fmtShort(rk.from)+" – "+fmtShort(rk.to)),el("div",{class:"v"},rows.length+" booking · "+fmtH(hours(rows)))));
   body.replaceChildren();
-  if(!rows.length){body.append(el("tr",{},el("td",{colspan:"7",class:"empty"},"Tidak ada pesanan pada rentang ini.")));return}
+  if(!rows.length){body.append(el("tr",{},el("td",{colspan:"7",class:"empty"},"Tidak ada booking pada rentang ini.")));return}
   let prev="";
   for(const b of rows){
     const first=b.date!==prev;prev=b.date;
@@ -615,7 +615,7 @@ function showDetail(b){
 }
 $("detail").addEventListener("click",ev=>{if(ev.target===$("detail"))$("detail").close()});
 
-/* ---------- ubah pesanan ---------- */
+/* ---------- ubah booking ---------- */
 function finished(b){const n=new Date(),t=ymd(n);return b.date<t||(b.date===t&&toMin(b.end)<=n.getHours()*60+n.getMinutes())}
 function setUnit(u){
   if(!u){$("f-unit").value="";$("f-unit-other").hidden=true;return}
@@ -630,7 +630,7 @@ function startEdit(b){
   if(![...$("f-start").options].some(o=>o.value===b.start))$("f-start").append(el("option",{value:b.start},b.start));
   $("f-start").value=b.start;fillEnd();$("f-end").value=b.end;
   $("f-title-in").value=b.title;setUnit(b.unit);$("f-name").value=b.name;$("f-pax").value=b.pax||"";
-  $("f-title").textContent="Ubah pesanan";
+  $("f-title").textContent="Ubah booking";
   const note=$("edit-note");note.replaceChildren("Mengubah: ",el("b",{},b.title)," · "+roomName(b.room)+", "+fmtShort(b.date)+" "+b.start+"–"+b.end);note.hidden=false;
   $("submit").textContent="Simpan perubahan";$("cancel-edit").hidden=false;
   $("msg").className="msg";$("msg").textContent="";
