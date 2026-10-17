@@ -113,6 +113,30 @@ body{margin:0}
 .foot{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;font-size:.82rem;color:var(--muted)}
 .linkbtn{border:0;background:none;color:var(--accent);padding:0;font-weight:600;text-decoration:underline}
 .admin-badge{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--busy-soft);color:var(--busy);padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:3px}
+.rk-head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+.rk-ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.rk-ctrl .field{min-width:0}
+.rk-ctrl input,.rk-ctrl select{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:7px 10px}
+.rk-quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.rk-quick button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:.82rem;font-weight:500}
+.rk-quick button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--fg)}
+.rk-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:14px}
+.rk-stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
+.rk-stat .k{font-size:.8rem;color:var(--muted);font-weight:600}
+.rk-stat .v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:1.05rem;font-weight:500;margin-top:2px}
+.rk-stat.total{border-color:var(--accent)}
+.rk-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.rk-table{width:100%;min-width:760px;border-collapse:collapse;font-size:.88rem}
+.rk-table th{text-align:left;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:9px 10px;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0}
+.rk-table td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
+.rk-table tr.day-start td{border-top:2px solid var(--line)}
+.rk-table tbody tr{cursor:pointer}
+.rk-table tbody tr:hover td{background:var(--accent-soft)}
+.rk-table .d{white-space:nowrap;font-weight:600}
+.rk-table .d small{display:block;font-weight:400;color:var(--muted)}
+.rk-table .t{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rk-table .past td{color:var(--muted)}
+.rk-note{font-size:.82rem;color:var(--muted);margin-top:10px}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .actions .primary{flex:1}
 .item .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
@@ -219,6 +243,35 @@ dialog.detail::backdrop{background:rgba(5,10,15,.55)}
     </section>
   </div>
 
+  <section class="panel" id="rekap" aria-labelledby="rk-title">
+    <div class="rk-head">
+      <div>
+        <h2 id="rk-title">Rekap pesanan</h2>
+        <div style="font-size:.85rem;color:var(--muted)">Semua pesanan pada rentang tanggal yang dipilih</div>
+      </div>
+      <div class="rk-ctrl">
+        <div class="field"><label for="rk-from">Dari</label><input type="date" id="rk-from"></div>
+        <div class="field"><label for="rk-to">Sampai</label><input type="date" id="rk-to"></div>
+        <div class="field"><label for="rk-room">Ruang</label><select id="rk-room"><option value="">Semua ruang</option></select></div>
+        <button class="btn" id="rk-xlsx" type="button">Unduh Excel</button>
+      </div>
+    </div>
+    <div class="rk-quick" id="rk-quick">
+      <button type="button" data-q="next30">30 hari ke depan</button>
+      <button type="button" data-q="week">Minggu ini</button>
+      <button type="button" data-q="nextweek">Minggu depan</button>
+      <button type="button" data-q="month">Bulan ini</button>
+      <button type="button" data-q="nextmonth">Bulan depan</button>
+    </div>
+    <div class="msg err" id="rk-msg" aria-live="polite"></div>
+    <div class="rk-sum" id="rk-sum"></div>
+    <div class="rk-wrap"><table class="rk-table">
+      <thead><tr><th>Tanggal</th><th>Waktu</th><th>Ruang</th><th>Agenda</th><th>Satker</th><th>Pemesan</th><th>Peserta</th></tr></thead>
+      <tbody id="rk-body"><tr><td colspan="7" class="empty">Memuat rekap…</td></tr></tbody>
+    </table></div>
+    <div class="rk-note">Ketuk baris untuk melihat detail. File Excel berisi sheet <b>Rekap</b> (semua pesanan) dan <b>Ringkasan</b> (jumlah pesanan dan jam per ruang).</div>
+  </section>
+
   <dialog class="detail" id="detail" aria-labelledby="d-title"></dialog>
 
   <div class="foot">
@@ -312,7 +365,7 @@ let loadErr=false;
 async function refresh(){
   const dates=[...new Set([state.date,$("f-date").value].filter(Boolean))];
   try{
-    await Promise.all([...dates.map(loadDate),loadMine()]);
+    await Promise.all([...dates.map(loadDate),loadMine(),loadRekap()]);
     if(loadErr){loadErr=false;hideNotice()}
   }catch(e){if(e.status!==401){loadErr=true;showNotice(e.message)}}
   render();
@@ -331,7 +384,7 @@ function render(){
   $("daylabel").textContent=fmtDay(state.date);
   $("tl-date").textContent="· "+fmtShort(state.date);
   $("admin-badge").hidden=!state.admin;
-  renderRooms();renderTimeline();renderCheck();renderList();renderAdmin();
+  renderRooms();renderTimeline();renderCheck();renderList();renderAdmin();renderRekap();
 }
 function renderRooms(){
   const box=$("rooms");box.replaceChildren();
@@ -456,6 +509,84 @@ function renderAdmin(){
   }
   area.append(el("button",{class:"linkbtn",type:"button",onclick:()=>{state.adminOpen=true;renderAdmin()}},"Masuk sebagai admin"));
 }
+
+/* ---------- rekap ---------- */
+const addDays=(s,n)=>{const d=parseYmd(s);d.setDate(d.getDate()+n);return ymd(d)};
+const rk={from:ymd(new Date()),to:addDays(ymd(new Date()),30),room:"",rows:null,err:"",quick:"next30"};
+for(const r of ROOMS)$("rk-room").append(el("option",{value:r.id},r.name));
+$("rk-from").value=rk.from;$("rk-to").value=rk.to;
+function quickRange(q){
+  const t=ymd(new Date()),d=parseYmd(t),dow=(d.getDay()+6)%7; // Senin = 0
+  if(q==="next30")return[t,addDays(t,30)];
+  if(q==="week"){const m=addDays(t,-dow);return[m,addDays(m,6)]}
+  if(q==="nextweek"){const m=addDays(t,7-dow);return[m,addDays(m,6)]}
+  if(q==="month"){return[ymd(new Date(d.getFullYear(),d.getMonth(),1)),ymd(new Date(d.getFullYear(),d.getMonth()+1,0))]}
+  if(q==="nextmonth"){return[ymd(new Date(d.getFullYear(),d.getMonth()+1,1)),ymd(new Date(d.getFullYear(),d.getMonth()+2,0))]}
+}
+async function loadRekap(){
+  try{const d=await api("GET","/api/bookings?from="+rk.from+"&to="+rk.to);rk.rows=d.bookings;rk.err="";
+    if(d.to&&d.to!==rk.to){rk.to=d.to;$("rk-to").value=d.to;rk.err="Rentang dibatasi maksimal satu tahun."}}
+  catch(e){if(e.status!==401)rk.err=e.message}
+}
+async function reloadRekap(){$("rk-body").replaceChildren(el("tr",{},el("td",{colspan:"7",class:"empty"},"Memuat rekap…")));await loadRekap();renderRekap()}
+function setRange(from,to,quick){
+  if(!from||!to)return;
+  if(to<from)[from,to]=[to,from];
+  rk.from=from;rk.to=to;rk.quick=quick||"";
+  $("rk-from").value=from;$("rk-to").value=to;reloadRekap();
+}
+function renderRekap(){
+  for(const b of $("rk-quick").querySelectorAll("button"))b.setAttribute("aria-pressed",b.dataset.q===rk.quick);
+  $("rk-msg").textContent=rk.err;
+  const sum=$("rk-sum"),body=$("rk-body");
+  if(!rk.rows){return}
+  const rows=rk.rows.filter(b=>!rk.room||b.room===rk.room).sort((a,b)=>a.date.localeCompare(b.date)||toMin(a.start)-toMin(b.start)||a.room.localeCompare(b.room));
+  const hours=list=>list.reduce((s,b)=>s+toMin(b.end)-toMin(b.start),0)/60;
+  const fmtH=h=>h.toLocaleString("id-ID",{maximumFractionDigits:1})+" jam";
+  sum.replaceChildren();
+  for(const r of ROOMS){
+    if(rk.room&&r.id!==rk.room)continue;
+    const l=rows.filter(b=>b.room===r.id);
+    sum.append(el("div",{class:"rk-stat"},el("div",{class:"k"},r.name),el("div",{class:"v"},l.length+" pesanan · "+fmtH(hours(l)))));
+  }
+  if(!rk.room)sum.append(el("div",{class:"rk-stat total"},el("div",{class:"k"},"Total "+fmtShort(rk.from)+" – "+fmtShort(rk.to)),el("div",{class:"v"},rows.length+" pesanan · "+fmtH(hours(rows)))));
+  body.replaceChildren();
+  if(!rows.length){body.append(el("tr",{},el("td",{colspan:"7",class:"empty"},"Tidak ada pesanan pada rentang ini.")));return}
+  let prev="";
+  for(const b of rows){
+    const first=b.date!==prev;prev=b.date;
+    const dt=parseYmd(b.date);
+    const tr=el("tr",{class:(first?"day-start ":"")+(finished(b)?"past":""),tabindex:"0"},
+      el("td",{class:"d"},first?dt.toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"}):"",first?el("small",{},dt.toLocaleDateString("id-ID",{weekday:"long"})):null),
+      el("td",{class:"t"},b.start+"–"+b.end),
+      el("td",{},roomName(b.room)),
+      el("td",{},b.title,b.mine?el("span",{class:"tag"},"Anda"):null),
+      el("td",{},b.unit||""),
+      el("td",{},b.name),
+      el("td",{class:"t"},b.pax?String(b.pax):"–"));
+    tr.addEventListener("click",()=>showDetail(b));
+    tr.addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();showDetail(b)}});
+    body.append(tr);
+  }
+}
+$("rk-from").addEventListener("change",()=>setRange($("rk-from").value,$("rk-to").value));
+$("rk-to").addEventListener("change",()=>setRange($("rk-from").value,$("rk-to").value));
+$("rk-room").addEventListener("change",()=>{rk.room=$("rk-room").value;renderRekap()});
+$("rk-quick").addEventListener("click",ev=>{const q=ev.target.closest("button")?.dataset.q;if(q){const[f,t]=quickRange(q);setRange(f,t,q)}});
+$("rk-xlsx").addEventListener("click",async()=>{
+  const btn=$("rk-xlsx"),label=btn.textContent;btn.disabled=true;btn.textContent="Menyiapkan…";$("rk-msg").textContent="";
+  try{
+    const h={"X-Owner-Token":ownerToken};if(accessPin)h["X-Access-Pin"]=accessPin;
+    const url="/api/bookings/export.xlsx?from="+rk.from+"&to="+rk.to+(rk.room?"&room="+rk.room:"");
+    const res=await fetch(url,{headers:h,cache:"no-store"});
+    if(!res.ok){let m="Gagal menyiapkan file Excel.";try{m=(await res.json()).message||m}catch(e){}throw new Error(m)}
+    const blob=await res.blob();
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download="rekap-ruang-rapat_"+rk.from+"_sd_"+rk.to+(rk.room?"_"+rk.room:"")+".xlsx";
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+  }catch(e){$("rk-msg").textContent=e.message||"Gagal menyiapkan file Excel."}
+  finally{btn.disabled=false;btn.textContent=label}
+});
 
 /* ---------- detail rapat ---------- */
 function meetingStatus(b){

@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/ardhiansyahfsa-maker/booking-ruang-rapat-mrdk#readme",
   "dependencies": {
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "pg": "^8.13.1"
   },

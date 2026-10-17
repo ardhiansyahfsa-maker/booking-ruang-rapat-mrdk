@@ -18,6 +18,7 @@ Siapa pun yang punya alamat aplikasi (dan PIN akses, bila diaktifkan) bisa melih
 - Tab "Pesanan saya", ubah pesanan (ruang, tanggal, jam, agenda, pengguna), dan pembatalan pesanan sendiri
 - PIN akses unit (opsional) dan mode admin untuk membatalkan pesanan siapa pun
 - Jadwal diperbarui otomatis setiap 15 detik
+- Rekap pesanan per rentang tanggal (termasuk tanggal mendatang), filter per ruang, ringkasan jumlah pesanan dan jam per ruang, serta unduh Excel
 
 ## Struktur repositori
 
@@ -77,6 +78,7 @@ Semua endpoint `/api` (kecuali `/api/config`) memerlukan header `X-Access-Pin` b
 |----------|-----------------------------------|----------------------------------------------|
 | `GET`    | `/api/config`                     | Pengaturan aplikasi (PIN wajib atau tidak)   |
 | `GET`    | `/api/bookings?from=&to=`         | Daftar pesanan pada rentang tanggal          |
+| `GET`    | `/api/bookings/export.xlsx?from=&to=&room=` | Unduh rekap Excel (sheet Rekap + Ringkasan) |
 | `GET`    | `/api/bookings/mine`              | Pesanan mendatang milik browser ini          |
 | `POST`   | `/api/bookings`                   | Buat pesanan (409 bila bentrok)              |
 | `PUT`    | `/api/bookings/:id`               | Ubah pesanan (pemilik atau admin; 409 bila bentrok) |

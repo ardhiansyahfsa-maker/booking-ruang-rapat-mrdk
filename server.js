@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const { Pool } = require("pg");
+const ExcelJS = require("exceljs");
 
 const PORT = process.env.PORT || 3000;
 const ACCESS_PIN = (process.env.ACCESS_PIN || "").trim(); // kosong = tanpa PIN akses
@@ -110,14 +111,94 @@ app.use("/api", (req, res, next) => {
 app.get("/api/check-pin", (req, res) => res.json({ ok: true }));
 app.get("/api/admin/check", (req, res) => (isAdmin(req) ? res.json({ ok: true }) : res.status(403).json({ error: "admin", message: "PIN admin salah." })));
 
+const MAX_RANGE_DAYS = 366;
+const addDaysStr = (s, n) => { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+// Rentang tanggal dari query (?from=&to=), dibatasi maksimal satu tahun
+function rangeFrom(q) {
+  const today = nowLocal().date;
+  let from = isDate(q.from) ? q.from : today;
+  let to = isDate(q.to) ? q.to : from;
+  if (to < from) [from, to] = [to, from];
+  const cap = addDaysStr(from, MAX_RANGE_DAYS);
+  if (to > cap) to = cap;
+  return { from, to };
+}
+
 app.get("/api/bookings", async (req, res, next) => {
   try {
-    const today = nowLocal().date;
-    let from = isDate(req.query.from) ? req.query.from : today;
-    let to = isDate(req.query.to) ? req.query.to : from;
-    if (to < from) [from, to] = [to, from];
-    const { rows } = await pool.query(`${SELECT} WHERE date BETWEEN $1 AND $2 ORDER BY date, start_min, room LIMIT 2000`, [from, to]);
-    res.json({ bookings: rows.map((r) => rowOut(r, req)) });
+    const { from, to } = rangeFrom(req.query);
+    const { rows } = await pool.query(`${SELECT} WHERE date BETWEEN $1 AND $2 ORDER BY date, start_min, room LIMIT 3000`, [from, to]);
+    res.json({ from, to, bookings: rows.map((r) => rowOut(r, req)) });
+  } catch (e) { next(e); }
+});
+
+// Unduh rekap sebagai file Excel
+app.get("/api/bookings/export.xlsx", async (req, res, next) => {
+  try {
+    const { from, to } = rangeFrom(req.query);
+    const room = ROOMS[req.query.room] ? req.query.room : null;
+    const { rows } = await pool.query(
+      `${SELECT} WHERE date BETWEEN $1 AND $2 AND ($3::text IS NULL OR room = $3) ORDER BY date, start_min, room LIMIT 5000`,
+      [from, to, room]
+    );
+    const dayName = new Intl.DateTimeFormat("id-ID", { weekday: "long", timeZone: "UTC" });
+    const asDate = (s) => new Date(s + "T00:00:00Z");
+    const fmtDMY = (s) => s.split("-").reverse().join("/");
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Booking Ruang Rapat MRDK";
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet("Rekap", { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.columns = [
+      { header: "No", key: "no", width: 5 },
+      { header: "Tanggal", key: "date", width: 12, style: { numFmt: "dd/mm/yyyy" } },
+      { header: "Hari", key: "day", width: 9 },
+      { header: "Mulai", key: "start", width: 7 },
+      { header: "Selesai", key: "end", width: 8 },
+      { header: "Durasi (jam)", key: "dur", width: 11, style: { numFmt: "0.0" } },
+      { header: "Ruang", key: "room", width: 22 },
+      { header: "Agenda", key: "title", width: 44 },
+      { header: "Satuan Kerja", key: "unit", width: 13 },
+      { header: "Bidang", key: "dk", width: 8 },
+      { header: "Pemesan", key: "name", width: 20 },
+      { header: "Peserta", key: "pax", width: 8 },
+    ];
+    rows.forEach((r, i) => ws.addRow({
+      no: i + 1, date: asDate(r.date), day: dayName.format(asDate(r.date)),
+      start: toHM(r.start_min), end: toHM(r.end_min), dur: (r.end_min - r.start_min) / 60,
+      room: ROOMS[r.room] || r.room, title: r.title, unit: r.unit, dk: r.dk || "", name: r.name, pax: r.pax ?? "",
+    }));
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCECF1" } };
+    ws.autoFilter = { from: "A1", to: "L1" };
+
+    const sum = wb.addWorksheet("Ringkasan");
+    sum.columns = [{ width: 26 }, { width: 16 }, { width: 12 }];
+    sum.addRow(["Rekap pesanan ruang rapat"]).font = { bold: true, size: 13 };
+    sum.addRow(["Periode", `${fmtDMY(from)} s.d. ${fmtDMY(to)}`]);
+    sum.addRow(["Ruang", room ? ROOMS[room] : "Semua ruang"]);
+    const n = nowLocal();
+    sum.addRow(["Diunduh", `${fmtDMY(n.date)} ${toHM(n.min)} WIB`]);
+    sum.addRow([]);
+    sum.addRow(["Ruang", "Jumlah pesanan", "Total jam"]).font = { bold: true };
+    let totalN = 0, totalMin = 0;
+    for (const [id, nm] of Object.entries(ROOMS)) {
+      if (room && id !== room) continue;
+      const rr = rows.filter((r) => r.room === id);
+      const mins = rr.reduce((a, r) => a + r.end_min - r.start_min, 0);
+      totalN += rr.length; totalMin += mins;
+      sum.addRow([nm, rr.length, mins / 60]).getCell(3).numFmt = "0.0";
+    }
+    const tr = sum.addRow(["Total", totalN, totalMin / 60]);
+    tr.font = { bold: true }; tr.getCell(3).numFmt = "0.0";
+
+    const fname = `rekap-ruang-rapat_${from}_sd_${to}${room ? "_" + room : ""}.xlsx`;
+    res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.set("Content-Disposition", `attachment; filename="${fname}"`);
+    res.set("Cache-Control", "no-store");
+    await wb.xlsx.write(res);
+    res.end();
   } catch (e) { next(e); }
 });
 
