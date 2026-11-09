@@ -43,6 +43,13 @@ Siapa pun yang punya alamat aplikasi (dan PIN akses, bila diaktifkan) bisa melih
 
 Catatan paket gratis Render: web service tertidur bila lama tidak diakses (pembukaan pertama bisa butuh beberapa puluh detik), dan database gratis punya batas masa pakai. Cek ketentuan terbaru di halaman harga Render, dan pertimbangkan paket berbayar bila aplikasi dipakai rutin.
 
+## Database (Neon)
+
+Sejak 9 November 2026 database aplikasi ada di [Neon](https://neon.com) (project `booking-ruang-rapat`, region Singapore), bukan lagi database gratis Render yang kedaluwarsa 30 hari setelah dibuat. `DATABASE_URL` di Render → Environment berisi connection string Neon dan diisi manual (`sync: false` di `render.yaml`).
+
+- Paket gratis Neon: database tidur setelah 5 menit tanpa akses dan bangun otomatis saat dibuka.
+- Simpan cadangan rutin lewat mode admin → **Unduh cadangan**. Untuk memindahkan data ke database lain: ganti `DATABASE_URL`, tunggu aplikasi menyala (tabel dibuat otomatis), lalu **Pulihkan dari file**.
+
 ## Menjalankan di komputer sendiri
 
 Butuh Node.js 18+ dan PostgreSQL.
