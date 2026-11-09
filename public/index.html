@@ -497,7 +497,17 @@ function renderList(){
 function renderAdmin(){
   const area=$("admin-area");area.replaceChildren();
   if(!config.adminEnabled)return;
-  if(state.admin){area.append(el("button",{class:"linkbtn",type:"button",onclick:()=>{adminPin="";sstore.del("rr-admin");state.admin=false;render()}},"Keluar dari mode admin"));return}
+  if(state.admin){
+    const file=el("input",{type:"file",id:"restore-file",accept:"application/json,.json",hidden:""});
+    const am=state.adminMsg||{cls:"msg",text:""};
+    const msg=el("span",{class:am.cls,id:"backup-msg"},am.text);
+    file.addEventListener("change",()=>{if(file.files[0])restoreBackup(file.files[0],msg);file.value=""});
+    area.append(el("span",{class:"inline-form"},
+      el("button",{class:"btn",type:"button",onclick:()=>downloadBackup(msg)},"Unduh cadangan"),
+      el("button",{class:"btn",type:"button",onclick:()=>file.click()},"Pulihkan dari file"),file,
+      el("button",{class:"linkbtn",type:"button",onclick:()=>{adminPin="";sstore.del("rr-admin");state.admin=false;render()}},"Keluar dari mode admin"),msg));
+    return;
+  }
   if(state.adminOpen){
     const inp=el("input",{type:"password",id:"admin-pin","aria-label":"PIN admin",placeholder:"PIN admin"});
     const msg=el("span",{class:"msg err"});
@@ -587,6 +597,34 @@ $("rk-xlsx").addEventListener("click",async()=>{
   }catch(e){$("rk-msg").textContent=e.message||"Gagal menyiapkan file Excel."}
   finally{btn.disabled=false;btn.textContent=label}
 });
+
+/* ---------- cadangan (admin) ---------- */
+function setAdminMsg(msg,cls,text){state.adminMsg={cls,text};const m=$("backup-msg")||msg;m.className=cls;m.textContent=text}
+function adminHeaders(){const h={"X-Owner-Token":ownerToken};if(accessPin)h["X-Access-Pin"]=accessPin;if(adminPin)h["X-Admin-Pin"]=adminPin;return h}
+async function downloadBackup(msg){
+  setAdminMsg(msg,"msg","Menyiapkan cadangan…");
+  try{
+    const res=await fetch("/api/admin/backup",{headers:adminHeaders(),cache:"no-store"});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.message||"Gagal mengunduh cadangan.");
+    const blob=new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download="cadangan-booking-ruang-rapat_"+ymd(new Date())+".json";
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+    setAdminMsg(msg,"msg ok","Cadangan diunduh: "+data.count+" booking.");
+  }catch(e){setAdminMsg(msg,"msg err",e.message)}
+}
+async function restoreBackup(f,msg){
+  setAdminMsg(msg,"msg","Memulihkan…");
+  try{
+    const data=JSON.parse(await f.text());
+    const res=await fetch("/api/admin/restore",{method:"POST",headers:{...adminHeaders(),"Content-Type":"application/json"},body:JSON.stringify(data)});
+    const r=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(r.message||"Gagal memulihkan cadangan.");
+    setAdminMsg(msg,"msg ok","Selesai: "+r.inserted+" booking ditambahkan"+(r.skipped?", "+r.skipped+" sudah ada sebelumnya":"")+".");
+    refresh();
+  }catch(e){setAdminMsg(msg,"msg err",e instanceof SyntaxError?"File tidak bisa dibaca. Pilih file cadangan .json dari aplikasi ini.":e.message)}
+}
 
 /* ---------- detail rapat ---------- */
 function meetingStatus(b){

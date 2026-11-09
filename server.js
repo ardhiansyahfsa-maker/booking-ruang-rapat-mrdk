@@ -24,7 +24,8 @@ if (!process.env.DATABASE_URL) {
 }
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
+  // SSL mengikuti connection string (mis. Neon: ?sslmode=require). PGSSL=true memaksa SSL.
+  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : undefined,
   max: 5,
 });
 
@@ -87,7 +88,9 @@ const SELECT = `SELECT id, room, to_char(date,'YYYY-MM-DD') AS date, start_min, 
 /* ---------- app ---------- */
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "10kb" }));
+const jsonSmall = express.json({ limit: "10kb" });
+const jsonBig = express.json({ limit: "5mb" });
+app.use((req, res, next) => (req.path === "/api/admin/restore" ? jsonBig : jsonSmall)(req, res, next));
 app.use((req, res, next) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.set("Referrer-Policy", "same-origin");
@@ -110,6 +113,65 @@ app.use("/api", (req, res, next) => {
 
 app.get("/api/check-pin", (req, res) => res.json({ ok: true }));
 app.get("/api/admin/check", (req, res) => (isAdmin(req) ? res.json({ ok: true }) : res.status(403).json({ error: "admin", message: "PIN admin salah." })));
+
+/* ---------- Cadangkan & pulihkan (khusus admin) ---------- */
+const BACKUP_COLS = ["id", "room", "date", "start_min", "end_min", "title", "unit", "dk", "name", "pax", "owner_hash", "created_at", "updated_at"];
+
+app.get("/api/admin/backup", async (req, res, next) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "admin", message: "Hanya admin yang bisa mengunduh cadangan." });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, room, to_char(date,'YYYY-MM-DD') AS date, start_min, end_min, title, unit, dk, name, pax, owner_hash, created_at, updated_at FROM bookings ORDER BY date, start_min, room`
+    );
+    const n = nowLocal();
+    res.set("Content-Disposition", `attachment; filename="cadangan-booking-ruang-rapat_${n.date}.json"`);
+    res.set("Cache-Control", "no-store");
+    res.json({ app: "booking-ruang-rapat-mrdk", version: 1, exportedAt: new Date().toISOString(), count: rows.length, bookings: rows });
+  } catch (e) { next(e); }
+});
+
+// Menggabungkan isi file cadangan: booking dengan id yang sudah ada dilewati, jadi aman dijalankan ulang
+app.post("/api/admin/restore", async (req, res, next) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "admin", message: "Hanya admin yang bisa memulihkan cadangan." });
+  const list = req.body && Array.isArray(req.body.bookings) ? req.body.bookings : null;
+  if (!list || req.body.app !== "booking-ruang-rapat-mrdk") return res.status(400).json({ error: "invalid", message: "File ini bukan cadangan Booking Ruang Rapat MRDK." });
+  const bad = (i, why) => res.status(400).json({ error: "invalid", message: `Data ke-${i + 1} tidak valid (${why}). Tidak ada data yang diubah.` });
+  const clean = [];
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i] || {};
+    if (!/^[0-9a-f-]{36}$/i.test(String(r.id))) return bad(i, "id");
+    if (!ROOMS[r.room]) return bad(i, "ruang");
+    if (!isDate(r.date)) return bad(i, "tanggal");
+    const s = Number(r.start_min), e = Number(r.end_min);
+    if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e > 24 * 60 || e <= s) return bad(i, "jam");
+    const title = cleanText(r.title, 120), unit = cleanText(r.unit, 80), name = cleanText(r.name, 80);
+    if (!title || !unit || !name) return bad(i, "agenda/satker/pemesan kosong");
+    if (typeof r.owner_hash !== "string" || !r.owner_hash) return bad(i, "penanda pemesan");
+    const pax = r.pax === null || r.pax === undefined || r.pax === "" ? null : Number(r.pax);
+    if (pax !== null && (!Number.isInteger(pax) || pax < 1 || pax > 500)) return bad(i, "peserta");
+    const ts = (v) => (v && !isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+    clean.push([r.id, r.room, r.date, s, e, title, unit, cleanText(r.dk, 10) || null, name, pax, r.owner_hash.slice(0, 100), ts(r.created_at) || new Date().toISOString(), ts(r.updated_at)]);
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let inserted = 0;
+    for (const v of clean) {
+      const q = await client.query(
+        `INSERT INTO bookings (${BACKUP_COLS.join(", ")}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO NOTHING`,
+        v
+      );
+      inserted += q.rowCount;
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, total: clean.length, inserted, skipped: clean.length - inserted });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
 
 const MAX_RANGE_DAYS = 366;
 const addDaysStr = (s, n) => { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };

@@ -17,6 +17,7 @@ Siapa pun yang punya alamat aplikasi (dan PIN akses, bila diaktifkan) bisa melih
 - Pilihan pengguna ruang berdasarkan satuan kerja OJK (DK1–DK9 beserta deputi komisioner dan departemennya), atau isian bebas
 - Tab "Pesanan saya", ubah pesanan (ruang, tanggal, jam, agenda, pengguna), dan pembatalan pesanan sendiri
 - PIN akses unit (opsional) dan mode admin untuk membatalkan pesanan siapa pun
+- Cadangkan & pulihkan (khusus admin): unduh semua booking sebagai file JSON dan pulihkan ke database lain
 - Jadwal diperbarui otomatis setiap 15 detik
 - Rekap pesanan per rentang tanggal (termasuk tanggal mendatang), filter per ruang, ringkasan jumlah pesanan dan jam per ruang, serta unduh Excel
 
@@ -63,7 +64,7 @@ Buka `http://localhost:3000`.
 | `ACCESS_PIN`    | Tidak | PIN untuk membuka aplikasi; kosong = tanpa PIN                    |
 | `ADMIN_PIN`     | Tidak | PIN mode admin; kosong = mode admin nonaktif                      |
 | `APP_TIME_ZONE` | Tidak | Zona waktu untuk aturan "waktu sudah lewat"; bawaan `Asia/Jakarta`|
-| `PGSSL`         | Tidak | Isi `true` bila database mewajibkan SSL (mis. koneksi eksternal)  |
+| `PGSSL`         | Tidak | Isi `true` untuk memaksa SSL. Tidak perlu untuk Neon karena connection string-nya sudah berisi `sslmode=require` |
 | `PORT`          | Tidak | Port server; diisi otomatis oleh Render                           |
 
 ## Cara kerja kepemilikan pesanan
@@ -79,6 +80,8 @@ Semua endpoint `/api` (kecuali `/api/config`) memerlukan header `X-Access-Pin` b
 | `GET`    | `/api/config`                     | Pengaturan aplikasi (PIN wajib atau tidak)   |
 | `GET`    | `/api/bookings?from=&to=`         | Daftar pesanan pada rentang tanggal          |
 | `GET`    | `/api/bookings/export.xlsx?from=&to=&room=` | Unduh rekap Excel (sheet Rekap + Ringkasan) |
+| `GET`    | `/api/admin/backup`               | Unduh cadangan semua booking (JSON, perlu `X-Admin-Pin`) |
+| `POST`   | `/api/admin/restore`              | Pulihkan dari file cadangan; booking yang sudah ada dilewati (perlu `X-Admin-Pin`) |
 | `GET`    | `/api/bookings/mine`              | Pesanan mendatang milik browser ini          |
 | `POST`   | `/api/bookings`                   | Buat pesanan (409 bila bentrok)              |
 | `PUT`    | `/api/bookings/:id`               | Ubah pesanan (pemilik atau admin; 409 bila bentrok) |
